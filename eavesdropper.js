@@ -1,4 +1,15 @@
-/*global require process console __dirname*/
+/*******************************************************************************
+ * Copyright (c) 2013 Max Schaefer.
+ * All rights reserved. This program and the accompanying materials
+ * are made available under the terms of the Eclipse Public License v1.0
+ * which accompanies this distribution, and is available at
+ * http://www.eclipse.org/legal/epl-v10.html
+ *
+ * Contributors:
+ *     Max Schaefer - initial API and implementation
+ *******************************************************************************/
+
+/*global require process console __dirname module exports*/
 
 var fs = require("fs"),
 	path = require("path"),
@@ -107,12 +118,12 @@ function nameAsStrLit(nd) {
 	return mkLiteral(String(nd.name));
 }
 	
-function instrument(nd) {
+function instrument_node(nd) {
 	if(!nd)
 		return;
 		
 	if(Array.isArray(nd))
-		return nd.flatmap(instrument);
+		return nd.flatmap(instrument_node);
 
 	var args;		
 	if(nd.type === 'ExpressionStatement') {
@@ -121,7 +132,7 @@ function instrument(nd) {
 			
 			switch(right.type) {
 			case 'FunctionExpression':
-				instrument(right);
+				instrument_node(right);
 				return [nd, mkObserverCall('afterFunctionExpression', nd, [nameAsStrLit(left), clone(left)])];
 				
 			case 'ObjectExpression':
@@ -166,48 +177,54 @@ function instrument(nd) {
 				// do nothing
 			}
 		} else if(nd.expression.type === 'CallExpression') {
-			instrument(nd.expression.callee);
+			instrument_node(nd.expression.callee);
 		} else {
 			throw new Error("unexpected expression statement of type " + nd.expression.type);
 		}
 	} else if(nd.type === 'FunctionExpression') {
-		astutil.forEachChild(nd, instrument);
-		if(astutil.getAttribute(nd, 'ret_var')) {
-			if(declaresArguments(nd))
-				throw new Error("cannot handle functions that declare 'arguments' as local variable/parameter");
-		
+		astutil.forEachChild(nd, instrument_node);
+		if(astutil.getAttribute(nd, 'ret_var') && !declaresArguments(nd)) {
 			var body = nd.body.body, n = body.length;
 			body[n] = body[n-1];
 			body[n-1] = mkObserverCall('atFunctionReturn', nd, [mkMemberExpr(mkIdentifier('arguments'), mkIdentifier('callee'), false),
-            	                                                mkIdentifier(astutil.getAttribute(nd, 'ret_var'))]);
+                                                                mkIdentifier(astutil.getAttribute(nd, 'ret_var'))]);
 			nd.body.body = [
 				mkObserverCall('atFunctionEntry', nd, [{type: 'ThisExpression'}, mkIdentifier('arguments')]),
 				{
-                	type: 'TryStatement',
-                	block: {
-                    	type: 'BlockStatement',
-                    	body: body
-                	},
-                	guardedHandlers: [],
-                	handlers: [],
-                	finalizer: {
-                    	type: 'BlockStatement',
-                    	body: [mkObserverCall('atFunctionExit', nd, [mkMemberExpr(mkIdentifier('arguments'), mkIdentifier('callee'), false)])]
-                	}
-            	}
+					type: 'TryStatement',
+					block: {
+						type: 'BlockStatement',
+						body: body
+					},
+					guardedHandlers: [],
+					handlers: [],
+					finalizer: {
+						type: 'BlockStatement',
+						body: [mkObserverCall('atFunctionExit', nd, [mkMemberExpr(mkIdentifier('arguments'), mkIdentifier('callee'), false)])]
+					}
+				}
 			];
 		}
 	} else if(nd.type === 'BlockStatement') {
-		nd.body = instrument(nd.body);
+		nd.body = instrument_node(nd.body);
 	} else {
-		astutil.forEachChild(nd, instrument);
+		astutil.forEachChild(nd, instrument_node);
 	}
 	return [nd];
 }
+
+function instrument(src, file) {
+	var ast = acorn.parse(src, { ranges: true, locations: true, sourceFile: file });
+	var normalized = normalizer.normalize(ast, { unify_ret: true });
+	return escodegen.generate(instrument_node(normalized)[0]);
+}
 	
-var file = path.basename(process.argv[2]);
-var ast = acorn.parse(fs.readFileSync(process.argv[2], 'utf-8'), { ranges: true, locations: true, sourceFile: file });
-var normalized = normalizer.normalize(ast, { unify_ret: true });
-var instrumented = escodegen.generate(instrument(normalized)[0]);
-//console.log(fs.readFileSync(__dirname + "/runtime.js", 'utf-8') + "\n" + instrumented);
-fs.writeFileSync(path.dirname(process.argv[2]) + "/" + path.basename(process.argv[2], '.js') + '_inst.js', instrumented);
+if(require.main === module) {
+	var file = path.basename(process.argv[2]);
+	var src = fs.readFileSync(process.argv[2], 'utf-8');
+	var instrumented = instrument(src, file);
+	//console.log(fs.readFileSync(__dirname + "/runtime.js", 'utf-8') + "\n" + instrumented);
+	fs.writeFileSync(path.dirname(process.argv[2]) + "/" + path.basename(process.argv[2], '.js') + '_inst.js', instrumented);
+} else {
+	exports.instrument = instrument;
+}

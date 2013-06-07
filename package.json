@@ -6,6 +6,7 @@
     "dependencies" : {
 		"acorn": "*",
 		"escodegen": "*",
+		"modxy": "*",
 		"js_wala": "https://github.com/wala/JS_WALA/tarball/master"
     },
     "license": "Eclipse"
