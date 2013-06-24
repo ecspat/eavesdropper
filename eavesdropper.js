@@ -18,10 +18,6 @@ var fs = require("fs"),
 	normalizer = require("JS_WALA/normalizer/lib/normalizer.js"),
 	astutil = require("JS_WALA/common/lib/ast.js");
 	
-function gen(ast) {
-	return escodegen.generate(ast);
-}
-	
 function parseStmt(src) {
 	return acorn.parse(src).body[0];
 }
@@ -159,7 +155,8 @@ function instrument_node(nd) {
 				args = [nameAsStrLit(left),
 						nameAsStrLit(right.callee), mkArray(right['arguments'].map(nameAsStrLit)),
 						clone(right.callee), mkArray(right['arguments'].map(clone))];
-				return [mkObserverCall('beforeNewExpression', nd, args), nd];
+				var after_args = [nameAsStrLit(left), clone(left), clone(right.callee), mkArray(right['arguments'].map(clone))];
+				return [mkObserverCall('beforeNewExpression', nd, args), nd, mkObserverCall('afterNewExpression', nd, after_args)];
 				
 			case 'MemberExpression':
 				args = [nameAsStrLit(left), nameAsStrLit(right.object), nameAsStrLit(right.property), mkLiteral(!!astutil.getAttribute(right, 'isComputed')), clone(right.object), clone(right.property)];
@@ -184,10 +181,10 @@ function instrument_node(nd) {
 	} else if(nd.type === 'FunctionExpression') {
 		astutil.forEachChild(nd, instrument_node);
 		if(astutil.getAttribute(nd, 'ret_var') && !declaresArguments(nd)) {
-			var body = nd.body.body, n = body.length;
+			var body = nd.body.body, n = body.length, retvar = astutil.getAttribute(nd, 'ret_var');
 			body[n] = body[n-1];
 			body[n-1] = mkObserverCall('atFunctionReturn', nd, [mkMemberExpr(mkIdentifier('arguments'), mkIdentifier('callee'), false),
-                                                                mkIdentifier(astutil.getAttribute(nd, 'ret_var'))]);
+                                                                mkLiteral(retvar), mkIdentifier(retvar)]);
 			nd.body.body = [
 				mkObserverCall('atFunctionEntry', nd, [{type: 'ThisExpression'}, mkIdentifier('arguments')]),
 				{
@@ -223,8 +220,8 @@ if(require.main === module) {
 	var file = path.basename(process.argv[2]);
 	var src = fs.readFileSync(process.argv[2], 'utf-8');
 	var instrumented = instrument(src, file);
-	//console.log(fs.readFileSync(__dirname + "/runtime.js", 'utf-8') + "\n" + instrumented);
-	fs.writeFileSync(path.dirname(process.argv[2]) + "/" + path.basename(process.argv[2], '.js') + '_inst.js', instrumented);
+	console.log(instrumented);
+	//fs.writeFileSync(path.dirname(process.argv[2]) + "/" + path.basename(process.argv[2], '.js') + '_inst.js', instrumented);
 } else {
 	exports.instrument = instrument;
 }
