@@ -155,8 +155,7 @@ function instrument_node(nd) {
 				args = [nameAsStrLit(left),
 						nameAsStrLit(right.callee), mkArray(right['arguments'].map(nameAsStrLit)),
 						clone(right.callee), mkArray(right['arguments'].map(clone))];
-				var after_args = [nameAsStrLit(left), clone(left), clone(right.callee), mkArray(right['arguments'].map(clone))];
-				return [mkObserverCall('beforeNewExpression', nd, args), nd, mkObserverCall('afterNewExpression', nd, after_args)];
+				return [mkObserverCall('beforeNewExpression', nd, args), nd];
 				
 			case 'MemberExpression':
 				args = [nameAsStrLit(left), nameAsStrLit(right.object), nameAsStrLit(right.property), mkLiteral(!!astutil.getAttribute(right, 'isComputed')), clone(right.object), clone(right.property)];

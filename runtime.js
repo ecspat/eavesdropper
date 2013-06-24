@@ -124,7 +124,6 @@ if(!__observer) {
 		
 		Observer.prototype.afterObjectExpression = function(pos, lhs, obj) {};
 		Observer.prototype.afterArrayExpression = function(pos, lhs, ary)  {};
-		Observer.prototype.afterNewExpression = function(pos, lhs, obj, callee, args) {};
 		
 		return new Observer();
 	})(this);
