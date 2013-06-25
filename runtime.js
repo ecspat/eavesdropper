@@ -105,16 +105,16 @@ if(!__observer) {
 				this.log(pos, mode + " call to " + descr);
 		};
 		
-		Observer.prototype.beforeFunctionCall = function(pos, callee, args, lhs_var, callee_var, args_vars) {
+		Observer.prototype.beforeFunctionCall = function(pos, callee, args, caller, lhs_var, callee_var, args_vars) {
 			this.beforeCall(pos, callee, 'function');
 		};
 		
-		Observer.prototype.beforeMethodCall = function(pos, obj, prop, isDynamic, args, lhs_var, obj_var, prop_var, args_vars) {
+		Observer.prototype.beforeMethodCall = function(pos, obj, prop, isDynamic, args, caller, lhs_var, obj_var, prop_var, args_vars) {
 			this.beforeMemberAccess(pos, obj, prop, isDynamic, 'read');
 			this.beforeCall(pos, obj[prop], 'method');
 		};
 		
-		Observer.prototype.beforeNewExpression = function(pos, callee, args, lhs_var, callee_var, args_vars) {
+		Observer.prototype.beforeNewExpression = function(pos, callee, args, caller, lhs_var, callee_var, args_vars) {
 			this.beforeCall(pos, callee, 'new');
 		};
 		

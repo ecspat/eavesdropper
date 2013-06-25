@@ -140,10 +140,12 @@ function instrument_node(nd) {
 			case 'CallExpression':
 				if(right.callee.type === 'Identifier') {
 					args = [clone(right.callee), mkArray(right['arguments'].map(clone)),
+							mkMemberExpr(mkIdentifier('arguments'), mkIdentifier('callee'), false),
 							nameAsStrLit(left),	nameAsStrLit(right.callee), mkArray(right['arguments'].map(nameAsStrLit))];
 					return [mkObserverCall('beforeFunctionCall', nd, args), nd];
 				} else {
 					args = [clone(right.callee.object), clone(right.callee.property), mkLiteral(!!astutil.getAttribute(right, 'isComputed')), mkArray(right['arguments'].map(clone)),
+							mkMemberExpr(mkIdentifier('arguments'), mkIdentifier('callee'), false),
 							nameAsStrLit(left), nameAsStrLit(right.callee.object), nameAsStrLit(right.callee.property), mkArray(right['arguments'].map(nameAsStrLit))];
 					return [mkObserverCall('beforeMethodCall', nd, args), nd];
 				}
@@ -151,6 +153,7 @@ function instrument_node(nd) {
 				
 			case 'NewExpression':
 				args = [clone(right.callee), mkArray(right['arguments'].map(clone)),
+						mkMemberExpr(mkIdentifier('arguments'), mkIdentifier('callee'), false),
 						nameAsStrLit(left),	nameAsStrLit(right.callee), mkArray(right['arguments'].map(nameAsStrLit))];
 				return [mkObserverCall('beforeNewExpression', nd, args), nd];
 				
