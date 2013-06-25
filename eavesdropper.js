@@ -129,42 +129,39 @@ function instrument_node(nd) {
 			switch(right.type) {
 			case 'FunctionExpression':
 				instrument_node(right);
-				return [nd, mkObserverCall('afterFunctionExpression', nd, [nameAsStrLit(left), clone(left)])];
+				return [nd, mkObserverCall('afterFunctionExpression', nd, [clone(left), nameAsStrLit(left)])];
 				
 			case 'ObjectExpression':
-				return [nd, mkObserverCall('afterObjectExpression', nd, [nameAsStrLit(left), clone(left)])];
+				return [nd, mkObserverCall('afterObjectExpression', nd, [clone(left), nameAsStrLit(left)])];
 				
 			case 'ArrayExpression':
-				return [nd, mkObserverCall('afterArrayExpression', nd, [nameAsStrLit(left), clone(left)])];
+				return [nd, mkObserverCall('afterArrayExpression', nd, [clone(left), nameAsStrLit(left)])];
 				
 			case 'CallExpression':
 				if(right.callee.type === 'Identifier') {
-					args = [nameAsStrLit(left),
-							nameAsStrLit(right.callee), mkArray(right['arguments'].map(nameAsStrLit)),
-							clone(right.callee), mkArray(right['arguments'].map(clone))];
+					args = [clone(right.callee), mkArray(right['arguments'].map(clone)),
+							nameAsStrLit(left),	nameAsStrLit(right.callee), mkArray(right['arguments'].map(nameAsStrLit))];
 					return [mkObserverCall('beforeFunctionCall', nd, args), nd];
 				} else {
-					args = [nameAsStrLit(left),
-							nameAsStrLit(right.callee.object), nameAsStrLit(right.callee.property), mkLiteral(!!astutil.getAttribute(right, 'isComputed')), mkArray(right['arguments'].map(nameAsStrLit)),
-							clone(right.callee.object), clone(right.callee.property), mkArray(right['arguments'].map(clone))];
+					args = [clone(right.callee.object), clone(right.callee.property), mkLiteral(!!astutil.getAttribute(right, 'isComputed')), mkArray(right['arguments'].map(clone)),
+							nameAsStrLit(left), nameAsStrLit(right.callee.object), nameAsStrLit(right.callee.property), mkArray(right['arguments'].map(nameAsStrLit))];
 					return [mkObserverCall('beforeMethodCall', nd, args), nd];
 				}
 				break;
 				
 			case 'NewExpression':
-				args = [nameAsStrLit(left),
-						nameAsStrLit(right.callee), mkArray(right['arguments'].map(nameAsStrLit)),
-						clone(right.callee), mkArray(right['arguments'].map(clone))];
+				args = [clone(right.callee), mkArray(right['arguments'].map(clone)),
+						nameAsStrLit(left),	nameAsStrLit(right.callee), mkArray(right['arguments'].map(nameAsStrLit))];
 				return [mkObserverCall('beforeNewExpression', nd, args), nd];
 				
 			case 'MemberExpression':
-				args = [nameAsStrLit(left), nameAsStrLit(right.object), nameAsStrLit(right.property), mkLiteral(!!astutil.getAttribute(right, 'isComputed')), clone(right.object), clone(right.property)];
+				args = [clone(right.object), clone(right.property), mkLiteral(!!astutil.getAttribute(right, 'isComputed')), nameAsStrLit(left), nameAsStrLit(right.object), nameAsStrLit(right.property)];
 				return [mkObserverCall('beforeMemberRead', nd, args), nd];
 				
 			case 'Identifier':
 				if(left.type === 'MemberExpression') {
-					args = [nameAsStrLit(left.object), nameAsStrLit(left.property), mkLiteral(!!astutil.getAttribute(left, 'isComputed')), nameAsStrLit(right),
-							clone(left.object), clone(left.property), clone(right)];
+					args = [clone(left.object), clone(left.property), clone(right), mkLiteral(!!astutil.getAttribute(left, 'isComputed')),
+						    nameAsStrLit(left.object), nameAsStrLit(left.property),  nameAsStrLit(right)];
 					return [mkObserverCall('beforeMemberWrite', nd, args), nd];
 				}
 				break;
@@ -183,7 +180,7 @@ function instrument_node(nd) {
 			var body = nd.body.body, n = body.length, retvar = astutil.getAttribute(nd, 'ret_var');
 			body[n] = body[n-1];
 			body[n-1] = mkObserverCall('atFunctionReturn', nd, [mkMemberExpr(mkIdentifier('arguments'), mkIdentifier('callee'), false),
-                                                                mkLiteral(retvar), mkIdentifier(retvar)]);
+                                                                mkIdentifier(retvar), mkLiteral(retvar)]);
 			nd.body.body = [
 				mkObserverCall('atFunctionEntry', nd, [{type: 'ThisExpression'}, mkIdentifier('arguments')]),
 				{

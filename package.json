@@ -3,10 +3,13 @@
     "version": "0.1.0",
     "author": "Max Schaefer <schaefer@ntu.edu.sg>",
     "description": "Dynamic analysis toolkit for JavaScript",
+    "repository": {
+    	"type" : "git",
+  		"url" : "https://github.com/ecspat/eavesdropper.git"
+    },
     "dependencies" : {
 		"acorn": "*",
 		"escodegen": "*",
-		"modxy": "*",
 		"js_wala": "https://github.com/wala/JS_WALA/tarball/master"
     },
     "license": "Eclipse"

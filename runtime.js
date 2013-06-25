@@ -67,25 +67,25 @@ if(!__observer) {
 			setHiddenProp(args, '__is_arguments_array', true);
 		};
 		
-		Observer.prototype.atFunctionReturn = function(pos, fn, ret, ret_val) {};
+		Observer.prototype.atFunctionReturn = function(pos, fn, ret, ret_var) {};
 		
 		Observer.prototype.atFunctionExit = function(pos, fn) {};
 		
-		Observer.prototype.beforeMemberAccess = function(pos, obj_val, prop_val, isDynamic, mode) {
+		Observer.prototype.beforeMemberAccess = function(pos, obj, prop, isDynamic, mode) {
 			if(isDynamic && typeof prop_val !== 'number')
-				this.log(pos, "dynamic " + mode + " of property " + prop_val);
-			if(obj_val.__is_arguments_array)
-				this.log(pos, "access to arguments['" + prop_val + "']");
-			if(String(prop_val) === 'constructor')
+				this.log(pos, "dynamic " + mode + " of property " + prop);
+			if(obj.__is_arguments_array)
+				this.log(pos, "access to arguments['" + prop + "']");
+			if(String(prop) === 'constructor')
 				this.log(pos, "access to constructor property");
 		};
 		
-		Observer.prototype.beforeMemberRead = function(pos, lhs, obj, prop, isDynamic, obj_val, prop_val) {
-			this.beforeMemberAccess(pos, obj_val, prop_val, isDynamic, 'read');
+		Observer.prototype.beforeMemberRead = function(pos, obj, prop, isDynamic, lhs_var, obj_var, prop_var) {
+			this.beforeMemberAccess(pos, obj, prop, isDynamic, 'read');
 		};
 		
-		Observer.prototype.beforeMemberWrite = function(pos, obj, prop, isDynamic, rhs, obj_val, prop_val, rhs_val) {
-			this.beforeMemberAccess(pos, obj_val, prop_val, isDynamic, 'write');
+		Observer.prototype.beforeMemberWrite = function(pos, obj, prop, val, isDynamic, obj_var, prop_var, rhs_var) {
+			this.beforeMemberAccess(pos, obj, prop, isDynamic, 'write');
 		};
 		
 		function describe(fn) {
@@ -105,25 +105,25 @@ if(!__observer) {
 				this.log(pos, mode + " call to " + descr);
 		};
 		
-		Observer.prototype.beforeFunctionCall = function(pos, lhs, callee, args, callee_val, args_val) {
-			this.beforeCall(pos, callee_val, 'function');
+		Observer.prototype.beforeFunctionCall = function(pos, callee, args, lhs_var, callee_var, args_vars) {
+			this.beforeCall(pos, callee, 'function');
 		};
 		
-		Observer.prototype.beforeMethodCall = function(pos, lhs, obj, prop, isDynamic, args, obj_val, prop_val, args_val) {
-			this.beforeMemberAccess(pos, obj_val, prop_val, isDynamic, 'read');
-			this.beforeCall(pos, obj_val[prop_val], 'method');
+		Observer.prototype.beforeMethodCall = function(pos, obj, prop, isDynamic, args, lhs_var, obj_var, prop_var, args_vars) {
+			this.beforeMemberAccess(pos, obj, prop, isDynamic, 'read');
+			this.beforeCall(pos, obj[prop], 'method');
 		};
 		
-		Observer.prototype.beforeNewExpression = function(pos, lhs, callee, args, callee_val, args_val) {
-			this.beforeCall(pos, callee_val, 'new');
+		Observer.prototype.beforeNewExpression = function(pos, callee, args, lhs_var, callee_var, args_vars) {
+			this.beforeCall(pos, callee, 'new');
 		};
 		
-		Observer.prototype.afterFunctionExpression = function(pos, lhs, fn) {
+		Observer.prototype.afterFunctionExpression = function(pos, fn, lhs_var) {
 			setHiddenProp(fn, '__sourcepos', pos);
 		};
 		
-		Observer.prototype.afterObjectExpression = function(pos, lhs, obj) {};
-		Observer.prototype.afterArrayExpression = function(pos, lhs, ary)  {};
+		Observer.prototype.afterObjectExpression = function(pos, obj, lhs_var) {};
+		Observer.prototype.afterArrayExpression = function(pos, ary, lhs_var)  {};
 		
 		return new Observer();
 	})(this);
