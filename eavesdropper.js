@@ -34,45 +34,62 @@ function mkArray(elts) {
 	return { type: 'ArrayExpression', elements: elts };
 }
 
-function clone(nd) {
-	if(nd.type === 'Identifier')
-		return mkIdentifier(nd.name);
-	throw new Error("cannot clone " + nd);
-}
-
-function mkObserverCall(msg, nd, args) {
-	var pos = astutil.getPosition(nd);
-	args = [{
-		type: 'ObjectExpression',
-		properties: ['url', 'start_line', 'start_offset', 'end_line', 'end_offset'].map(function(p) {
-			return {
-				type: 'Property',
-				key: mkIdentifier(p),
-				value: mkLiteral(pos[p]),
-				kind: 'init'
-			};
-		})
-	}].concat(args);
-	
+function mkAssignStmt(lhs, rhs) {
 	return {
 		type: 'ExpressionStatement',
 		expression: {
-			type: 'CallExpression',
-			callee: {
-				type: 'MemberExpression',
-				object: {
-					type: 'Identifier',
-					name: '__observer'
-				},
-				property: {
-					type: 'Identifier',
-					name: msg
-				},
-				computed: false
-			},
-			'arguments': args
+			type: 'AssignmentExpression',
+			operator: '=',
+			left: lhs,
+			right: rhs
 		}
 	};
+}
+
+function mkRuntimeCall(m, nd, args) {
+	args = args || [];
+	if (false && nd) {
+		var pos = astutil.getPosition(nd);
+		args = [{
+			type: 'ObjectExpression',
+			properties: ['url', 'start_line', 'start_offset', 'end_line', 'end_offset'].map(function(p) {
+				return {
+					type: 'Property',
+					key: mkIdentifier(p),
+					value: mkLiteral(pos[p]),
+					kind: 'init'
+				};
+			})
+		}].concat(args);
+	}
+	
+	return {
+		type: 'CallExpression',
+		callee: {
+			type: 'MemberExpression',
+			object: {
+				type: 'Identifier',
+				name: '__runtime'
+			},
+			property: {
+				type: 'Identifier',
+				name: m
+			},
+			computed: false
+		},
+		'arguments': args
+	};
+}
+
+function mkRuntimeCallStmt(m, nd, args) {
+	return {
+		type: 'ExpressionStatement',
+		expression: mkRuntimeCall(m, nd, args)
+	};
+}
+
+function mkThis() {
+	return { type: 'ThisExpression' };
 }
 
 function declaresArguments(nd) {
@@ -110,109 +127,208 @@ function mkLiteral(v) {
 	}
 }
 
-function nameAsStrLit(nd) {
-	return mkLiteral(String(nd.name));
-}
-	
 function instrument_node(nd) {
 	if(!nd)
 		return;
 		
 	if(Array.isArray(nd))
-		return nd.flatmap(instrument_node);
+		return nd.forEach(instrument_node);
 
-	var args;		
-	if(nd.type === 'ExpressionStatement') {
+	switch(nd.type) {
+	case 'Program':
+		var global_closure_call = nd.body[0].expression;
+		global_closure_call['arguments'][0] = mkRuntimeCall('wrapGlobal', nd, [global_closure_call['arguments'][0]]);
+		instrument_node(global_closure_call.callee.body);
+		global_closure_call.callee.body.body = [
+			mkRuntimeCallStmt("enterScript", nd),
+			{
+				type: 'TryStatement',
+				block: {
+					type: 'BlockStatement',
+					body: global_closure_call.callee.body.body
+				},
+				guardedHandlers: [],
+				handlers: [],
+				finalizer: {
+					type: 'BlockStatement',
+					body: [mkRuntimeCallStmt("leaveScript", nd)]
+				}
+			}];
+		break;
+		
+	case 'VariableDeclaration':
+		nd.declarations.forEach(function(decl) {
+			decl.init = mkRuntimeCall("wrapLiteral", decl);
+		});
+		break;
+		
+	case 'ExpressionStatement':
 		if(nd.expression.type === 'AssignmentExpression') {
 			var left = nd.expression.left, right = nd.expression.right;
 			
 			switch(right.type) {
 			case 'FunctionExpression':
-				instrument_node(right);
-				return [nd, mkObserverCall('afterFunctionExpression', nd, [clone(left), nameAsStrLit(left)])];
-				
 			case 'ObjectExpression':
-				return [nd, mkObserverCall('afterObjectExpression', nd, [clone(left), nameAsStrLit(left)])];
-				
 			case 'ArrayExpression':
-				return [nd, mkObserverCall('afterArrayExpression', nd, [clone(left), nameAsStrLit(left)])];
+			case 'Literal':
+				instrument_node(right);
+				nd.expression.right = mkRuntimeCall('wrapLiteral', nd, [right]);
+				break;
 				
 			case 'CallExpression':
 				if(right.callee.type === 'Identifier') {
-					args = [clone(right.callee), mkArray(right['arguments'].map(clone)),
-							mkMemberExpr(mkIdentifier('arguments'), mkIdentifier('callee'), false),
-							nameAsStrLit(left),	nameAsStrLit(right.callee), mkArray(right['arguments'].map(nameAsStrLit))];
-					return [mkObserverCall('beforeFunctionCall', nd, args), nd];
+					nd.expression.right = mkRuntimeCall('funcall', nd, [right.callee].concat(right['arguments']));
 				} else {
-					args = [clone(right.callee.object), clone(right.callee.property), mkLiteral(!!astutil.getAttribute(right, 'isComputed')), mkArray(right['arguments'].map(clone)),
-							mkMemberExpr(mkIdentifier('arguments'), mkIdentifier('callee'), false),
-							nameAsStrLit(left), nameAsStrLit(right.callee.object), nameAsStrLit(right.callee.property), mkArray(right['arguments'].map(nameAsStrLit))];
-					return [mkObserverCall('beforeMethodCall', nd, args), nd];
+					nd.expression.right = mkRuntimeCall('methodcall', nd, [right.callee.object, right.callee.property].concat(right['arguments']));
 				}
 				break;
 				
 			case 'NewExpression':
-				args = [clone(right.callee), mkArray(right['arguments'].map(clone)),
-						mkMemberExpr(mkIdentifier('arguments'), mkIdentifier('callee'), false),
-						nameAsStrLit(left),	nameAsStrLit(right.callee), mkArray(right['arguments'].map(nameAsStrLit))];
-				return [mkObserverCall('beforeNewExpression', nd, args), nd];
+				nd.expression.right = mkRuntimeCall('newexpr', nd, [right.callee].concat(right['arguments']));
+				break;
 				
 			case 'MemberExpression':
-				args = [clone(right.object), clone(right.property), mkLiteral(!!astutil.getAttribute(right, 'isComputed')), nameAsStrLit(left), nameAsStrLit(right.object), nameAsStrLit(right.property)];
-				return [mkObserverCall('beforeMemberRead', nd, args), nd];
+				nd.expression.right = mkRuntimeCall('propread', nd, [right.object, right.property, mkLiteral(!!astutil.getAttribute(right, 'isComputed'))]);
+				break;
 				
 			case 'Identifier':
 				if(left.type === 'MemberExpression') {
-					args = [clone(left.object), clone(left.property), clone(right), mkLiteral(!!astutil.getAttribute(left, 'isComputed')),
-						    nameAsStrLit(left.object), nameAsStrLit(left.property),  nameAsStrLit(right)];
-					return [mkObserverCall('beforeMemberWrite', nd, args), nd];
+					nd.expression = mkRuntimeCall('propwrite', nd, [left.object, left.property, mkLiteral(!!astutil.getAttribute(left, 'isComputed')), right]);
 				}
 				break;
 				
-			default:
-				// do nothing
-			}
-		} else if(nd.expression.type === 'CallExpression') {
-			instrument_node(nd.expression.callee);
-		} else {
-			throw new Error("unexpected expression statement of type " + nd.expression.type);
-		}
-	} else if(nd.type === 'FunctionExpression') {
-		astutil.forEachChild(nd, instrument_node);
-		if(astutil.getAttribute(nd, 'ret_var') && !declaresArguments(nd)) {
-			var body = nd.body.body, n = body.length, retvar = astutil.getAttribute(nd, 'ret_var');
-			body[n] = body[n-1];
-			body[n-1] = mkObserverCall('atFunctionReturn', nd, [mkMemberExpr(mkIdentifier('arguments'), mkIdentifier('callee'), false),
-                                                                mkIdentifier(retvar), mkLiteral(retvar)]);
-			nd.body.body = [
-				mkObserverCall('atFunctionEntry', nd, [{type: 'ThisExpression'}, mkIdentifier('arguments')]),
-				{
-					type: 'TryStatement',
-					block: {
-						type: 'BlockStatement',
-						body: body
-					},
-					guardedHandlers: [],
-					handlers: [],
-					finalizer: {
-						type: 'BlockStatement',
-						body: [mkObserverCall('atFunctionExit', nd, [mkMemberExpr(mkIdentifier('arguments'), mkIdentifier('callee'), false)])]
+			case 'LogicalExpression':
+			case 'BinaryExpression':
+				nd.expression.right = mkRuntimeCall('binop', nd, [right.left, mkLiteral(right.operator), right.right]);
+				break;
+				
+			case 'UnaryExpression':
+				if(right.operator === 'delete') {
+					if(right.argument.type === 'MemberExpression') {
+						nd.expression.right = mkRuntimeCall('propdel', nd, [right.argument.object, right.argument.property, mkLiteral(!!astutil.getAttribute(right.argument, 'isComputed'))]);
 					}
+				} else {
+					nd.expression.right = mkRuntimeCall('unop', nd, [right.operator, right.argument]);
 				}
-			];
+				break;
+				
+			case 'ThisExpression':
+				break;
+				
+			default:
+				throw new Error("unexpected RHS type " + right.type);
+			}
+		} else {
+			throw new Error("unexpected expression type " + nd.expression.type);
 		}
-	} else if(nd.type === 'BlockStatement') {
-		nd.body = instrument_node(nd.body);
-	} else {
-		astutil.forEachChild(nd, instrument_node);
+		break;
+		
+	case 'IfStatement':
+		instrument_node(nd.consequent);
+		instrument_node(nd.alternate);
+		break;
+		
+	case 'ObjectExpression':
+		nd.properties.forEach(instrument_node);
+		break;
+		
+	case 'ArrayExpression':
+		nd.elements.forEach(instrument_node);
+		break;
+		
+	case 'Property':
+		// TODO: handle getters and setters
+		instrument_node(nd.value);
+		break;
+		
+	case 'LabeledStatement':
+	case 'WhileStatement':
+		instrument_node(nd.body);
+		break;
+		
+	case 'BlockStatement':
+		nd.body.forEach(instrument_node);
+		break;
+		
+	case 'ForInStatement':
+		var loopvar = nd.left.name;
+		nd.body.body.unshift(mkAssignStmt(mkIdentifier(loopvar), mkRuntimeCall('wrapForInVar', nd, [mkIdentifier(loopvar)])));
+		break;
+		
+	case 'TryStatement':
+		instrument_node(nd.block);
+		if(nd.handlers.length > 0) {
+			var exnvar = nd.handlers[0].param.name;
+			instrument_node(nd.handlers[0].body);
+			nd.handlers[0].body.body.unshift(mkAssignStmt(mkIdentifier(exnvar), mkRuntimeCall('wrapNativeExn', nd, [mkIdentifier(exnvar)])));
+		}
+		instrument_node(nd.finalizer);
+		break;
+		
+	case 'ReturnStatement':
+		nd.argument = mkRuntimeCall('unwrapIfCallerIsNative', nd, [nd.argument]);
+		break;
+		
+	case 'Literal':
+	case 'Identifier':
+	case 'DebuggerStatement':
+	case 'ThrowStatement':
+	case 'EmptyStatement':
+	case 'BreakStatement':
+	case 'ContinueStatement':
+		break;
+		
+	case 'FunctionExpression':
+		instrument_node(nd.body);
+		
+		if (declaresArguments(nd)) {
+			// TODO: wrap all arguments (if caller is native), undefined arguments (if not)
+			throw new Error("cannot handle this yet");
+		} else {
+			nd.body.body.unshift(mkAssignStmt(mkIdentifier('arguments'), mkRuntimeCall('prepareArguments', nd, [mkIdentifier('arguments')])));
+		}
+
+		nd.body.body = [
+			{
+				type: 'IfStatement',
+				condition: {
+					type: 'UnaryExpression',
+					operator: '!',
+					argument: mkRuntimeCall('isWrapped', nd, [mkThis()])
+				},
+				consequent: {
+					type: 'ReturnStatement',
+					argument: mkRuntimeCall('callWrapped', nd, [mkThis(), mkIdentifier('arguments')])
+				},
+				alternate: null
+			},
+			mkRuntimeCallStmt('enterFunction', nd), {
+				type: 'TryStatement',
+				block: {
+					type: 'BlockStatement',
+					body: nd.body.body
+				},
+				guardedHandlers: [],
+				handlers: [],
+				finalizer: {
+					type: 'BlockStatement',
+					body: [
+					mkRuntimeCallStmt('leaveFunction')]
+				}
+			}
+		];
+		break;
+	
+	default:
+		throw new Error("unexpected node type: " + nd.type);
 	}
-	return [nd];
 }
 
 function instrument(src, file) {
 	var ast = acorn.parse(src, { ranges: true, locations: true, sourceFile: file });
 	var normalized = normalizer.normalize(ast, { unify_ret: true });
-	return escodegen.generate(instrument_node(normalized)[0]);
+	instrument_node(normalized);
+	return escodegen.generate(normalized);
 }
 	
 if(require.main === module) {
