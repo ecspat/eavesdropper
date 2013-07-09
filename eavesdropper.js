@@ -48,7 +48,7 @@ function mkAssignStmt(lhs, rhs) {
 
 function mkRuntimeCall(m, nd, args) {
 	args = args || [];
-	if (false && nd) {
+	if (nd) {
 		var pos = astutil.getPosition(nd);
 		args = [{
 			type: 'ObjectExpression',
@@ -208,7 +208,7 @@ function instrument_node(nd) {
 						nd.expression.right = mkRuntimeCall('propdel', nd, [right.argument.object, right.argument.property, mkLiteral(!!astutil.getAttribute(right.argument, 'isComputed'))]);
 					}
 				} else {
-					nd.expression.right = mkRuntimeCall('unop', nd, [right.operator, right.argument]);
+					nd.expression.right = mkRuntimeCall('unop', nd, [mkLiteral(right.operator), right.argument]);
 				}
 				break;
 				
@@ -291,7 +291,7 @@ function instrument_node(nd) {
 		nd.body.body = [
 			{
 				type: 'IfStatement',
-				condition: {
+				test: {
 					type: 'UnaryExpression',
 					operator: '!',
 					argument: mkRuntimeCall('isWrapped', nd, [mkThis()])
