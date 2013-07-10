@@ -224,6 +224,7 @@ function instrument_node(nd) {
 		break;
 		
 	case 'IfStatement':
+		nd.test = mkRuntimeCall('unwrap', null, null, [nd.test]);
 		instrument_node(nd.consequent);
 		instrument_node(nd.alternate);
 		break;
@@ -241,8 +242,9 @@ function instrument_node(nd) {
 		instrument_node(nd.value);
 		break;
 		
-	case 'LabeledStatement':
 	case 'WhileStatement':
+		nd.test = mkRuntimeCall('unwrap', null, null, [nd.test]);
+	case 'LabeledStatement':
 		instrument_node(nd.body);
 		break;
 		
@@ -252,6 +254,8 @@ function instrument_node(nd) {
 		
 	case 'ForInStatement':
 		var loopvar = nd.left.name;
+		nd.right = mkRuntimeCall('unwrap', null, null, [nd.right]);
+		instrument_node(nd.body);
 		nd.body.body.unshift(mkAssignStmt(mkIdentifier(loopvar), mkRuntimeCall('wrapForInVar', nd, ['start_offset'], [mkIdentifier(loopvar)])));
 		break;
 		
@@ -260,7 +264,7 @@ function instrument_node(nd) {
 		if(nd.handlers.length > 0) {
 			var exnvar = nd.handlers[0].param.name;
 			instrument_node(nd.handlers[0].body);
-			nd.handlers[0].body.body.unshift(mkAssignStmt(mkIdentifier(exnvar), mkRuntimeCall('wrapNativeExn', nd, ['start_offset'], [mkIdentifier(exnvar)])));
+			nd.handlers[0].body.body.unshift(mkAssignStmt(mkIdentifier(exnvar), mkRuntimeCall('wrapNativeException', nd, ['start_offset'], [mkIdentifier(exnvar)])));
 		}
 		instrument_node(nd.finalizer);
 		break;
