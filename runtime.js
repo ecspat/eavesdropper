@@ -32,8 +32,17 @@ var wrapGlobal = Runtime.prototype.wrapGlobal = function(pos, global) {
 
 var wrapLiteral = Runtime.prototype.wrapLiteral = function(pos, lit) {
 	var res = new TaggedValue(lit, this.observer.tagLiteral(lit));
+	
 	if(Object(lit) === lit) {
 		Object.defineProperty(lit, "__properties", { enumerable: false, writable: false, value: {} });
+		
+		for(var p in lit) {
+			if(lit.hasOwnProperty(p)) {
+				var v = lit[p];
+				lit[p] = v.getValue();
+				setPropertyTag(lit, p, v.getTag());
+			}
+		}
 	}
 	return res;
 };
@@ -63,6 +72,8 @@ var callWrapped = Runtime.prototype.callWrapped = function(recv, args) {
 	try {
 		var wrapped_recv = this.wrapNativeReceiver(args.callee, recv),
 		    wrapped_args = _.map(args, _.bind(wrapNativeArgument, this, args.callee));
+		for(var i=wrapped_args.length,n=args.callee.length;i<n;++i)
+			wrapped_args[i] = new TaggedValue(void(0), this.observer.tagLiteral());
 		return args.callee.apply(wrapped_recv, wrapped_args);
 	} catch(e) {
 		throw unwrap(e);
@@ -75,11 +86,9 @@ var methodcall = Runtime.prototype.methodcall = function(pos, recv, msg, args) {
 
 var funcall = Runtime.prototype.funcall = function(pos, callee, recv, args) {
 	var unwrapped_callee = callee.getValue();
-	if(!unwrapped_callee)
-		debugger;
 	if(unwrapped_callee.__properties) {
 		for(var i=args.length,n=unwrapped_callee.length;i<n;++i)
-			args[i] = this.wrapLiteral();
+			args[i] = new TaggedValue(void(0), this.observer.tagLiteral());
 		return unwrapped_callee.apply(recv, args);
 	} else {
 		var res = unwrapped_callee.apply(recv.getValue(), _.invoke(args, 'getValue'));
@@ -93,12 +102,12 @@ var newexpr = Runtime.prototype.newexpr = function(pos, callee, args) {
 	var unwrapped_callee = callee.getValue(), res;
 	if(unwrapped_callee.__properties) {
 		var recv = new TaggedValue(Object.create(unwrapped_callee.prototype), this.observer.tagNewInstance(callee));
-		res = this.methodcall(pos, callee, recv, args);
-		return Object(res) === res ? res : recv;
+		res = this.funcall(pos, callee, recv, args);
+		return Object(res.getValue()) === res.getValue() ? res : recv;
 	} else {
 		var a = [];
 		for(var i=0,n=args.length;i<n;++i)
-			a[i] = 'args[' + i + ']';
+			a[i] = 'args[' + i + '].getValue()';
 		res = eval('new unwrapped_callee(' + a.join() + ')');
 		if(!isWrapped(res))
 			res = new TaggedValue(res, this.observer.tagNewNativeInstance(res, callee, args));
@@ -107,25 +116,30 @@ var newexpr = Runtime.prototype.newexpr = function(pos, callee, args) {
 };
 
 var prepareArguments = Runtime.prototype.prepareArguments = function(args) {
-	var wrapped_args = this.wrapLiteral(args);
-	var new_args = new TaggedValue(arguments, wrapped_args.getTag());
+	var args_copy = args,
+		new_args = new TaggedValue(arguments, this.observer.tagLiteral(args));
+		
+	Object.defineProperty(arguments, "__properties", { enumerable: false, writable: false, value: {} });
 	
-	for(var i=0,n=args.length;i<n;++i)
-		this.propwrite(null, new_args, this.wrapLiteral(i), false, args[i]);
+	for(var i=0,n=args_copy.length;i<n;++i) {
+		arguments[i] = args_copy[i].getValue();
+		setPropertyTag(arguments, args_copy[i].getTag());
+	}
 		
 	for(;i<arguments.length;++i)
-		delete args[i];
+		delete arguments[i];
 	
-	this.propwrite(null, new_args, this.wrapLiteral("__proto__"), false, this.wrapLiteral(args.__proto__));
-	this.propwrite(null, new_args, this.wrapLiteral("length"), false, this.wrapLiteral(args.length));
-	this.propwrite(null, new_args, this.wrapLiteral("callee"), false, this.wrapLiteral(args.callee));
+	arguments.__proto__ = args_copy.__proto__;
+	arguments.length = args_copy.length;
+	arguments.callee = args_copy.callee;
+	setPropertyTag(arguments, '__proto__', this.observer.tagLiteral(arguments.__proto__));
+	setPropertyTag(arguments, 'length', this.observer.tagLiteral(arguments.length));
+	setPropertyTag(arguments, 'callee', this.observer.tagLiteral(arguments.callee));
 	
 	return new_args;
 };
 
 var binop = Runtime.prototype.binop = function(pos, left, op, right) {
-	if(!isWrapped(left) || !isWrapped(right))
-		debugger;
 	var res = eval("left.getValue()" + op + " right.getValue()");
 	return new TaggedValue(res, this.observer.tagBinOpResult(res, left.getTag(), op, right.getTag()));
 };
