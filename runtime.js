@@ -9,122 +9,166 @@
  *     Max Schaefer - initial API and implementation
  *******************************************************************************/
 
-/*global console*/
+/*global require module */
 
-var __observer;
+var TaggedValue = require('./TaggedValue'),
+    _ = require('underscore');
 
-if(!__observer) {
-	__observer = (function(global) {
-		var messages = [];
-		
-		function setHiddenProp(obj, prop, val) {
-			try {
-				Object.defineProperty(obj, prop, { enumerable: false, writable: true, value: val });
-			} catch(e) {}
-			return val;
-		}
-		
-		// do a depth-first traversal of the object graph rooted at 'obj' and tag functions with their path names inside this graph
-		function tag_native_functions(obj, path) {
-			if(typeof obj === 'function' || obj && typeof obj === 'object') {
-				// avoid infinite recursion
-				if(obj.hasOwnProperty('__visited'))
-					return;
-				setHiddenProp(obj, '__visited', true);
-
-				// tag if it's a function
-				if(typeof obj === 'function')
-					setHiddenProp(obj, '__path', path.join('.'));
-				
-				Object.getOwnPropertyNames(obj).forEach(function(p) {
-					// skip numeric indices
-					if(!isNaN(Number(p)))
-						return;
-						
-					path.push(p);
-					try { tag_native_functions(obj[p], path); } catch(e) {}
-					path.pop();
-				});
-			}
-		}
-		tag_native_functions(global, []);
-		
-		function Observer() {
-			this.messages = [];
-		}
-		
-		Observer.prototype.log = function(pos, msg) {
-			var log_msg = pos.url + "@" + pos.start_line + ":" + pos.start_offset + ": " + msg;
-			if(this.messages.indexOf(log_msg) === -1)
-				this.messages.push(log_msg);
-		};
-		
-		Observer.prototype.getLog = function() {
-			return this.messages.join('\n');
-		};
-		
-		Observer.prototype.atFunctionEntry = function(pos, recv, args) {
-			setHiddenProp(args, '__is_arguments_array', true);
-		};
-		
-		Observer.prototype.atFunctionReturn = function(pos, fn, ret, ret_var) {};
-		
-		Observer.prototype.atFunctionExit = function(pos, fn) {};
-		
-		Observer.prototype.beforeMemberAccess = function(pos, obj, prop, isDynamic, mode) {
-			if(isDynamic && typeof prop_val !== 'number')
-				this.log(pos, "dynamic " + mode + " of property " + prop);
-			if(obj.__is_arguments_array)
-				this.log(pos, "access to arguments['" + prop + "']");
-			if(String(prop) === 'constructor')
-				this.log(pos, "access to constructor property");
-		};
-		
-		Observer.prototype.beforeMemberRead = function(pos, obj, prop, isDynamic, lhs_var, obj_var, prop_var) {
-			this.beforeMemberAccess(pos, obj, prop, isDynamic, 'read');
-		};
-		
-		Observer.prototype.beforeMemberWrite = function(pos, obj, prop, val, isDynamic, obj_var, prop_var, rhs_var) {
-			this.beforeMemberAccess(pos, obj, prop, isDynamic, 'write');
-		};
-		
-		function describe(fn) {
-			if(fn) {
-				if(fn.hasOwnProperty('__sourcepos')) {
-					var pos = fn.__sourcepos;
-					return pos.url + "@" + pos.start_line + ":" + pos.start_offset;
-				} else if(fn.hasOwnProperty('__path')) {
-					return fn.__path;
-				}
-			}
-		}
-		
-		Observer.prototype.beforeCall = function(pos, callee_val, mode) {
-			var descr = describe(callee_val);
-			if(descr)
-				this.log(pos, mode + " call to " + descr);
-		};
-		
-		Observer.prototype.beforeFunctionCall = function(pos, callee, args, caller, lhs_var, callee_var, args_vars) {
-			this.beforeCall(pos, callee, 'function');
-		};
-		
-		Observer.prototype.beforeMethodCall = function(pos, obj, prop, isDynamic, args, caller, lhs_var, obj_var, prop_var, args_vars) {
-			this.beforeMemberAccess(pos, obj, prop, isDynamic, 'read');
-			this.beforeCall(pos, obj[prop], 'method');
-		};
-		
-		Observer.prototype.beforeNewExpression = function(pos, callee, args, caller, lhs_var, callee_var, args_vars) {
-			this.beforeCall(pos, callee, 'new');
-		};
-		
-		Observer.prototype.afterFunctionExpression = function(pos, fn, lhs_var) {
-			setHiddenProp(fn, '__sourcepos', pos);
-		};
-		
-		Observer.prototype.afterObjectExpression = function(pos, obj, lhs_var) {};
-		Observer.prototype.afterArrayExpression = function(pos, ary, lhs_var)  {};
-		
-		return new Observer();
-	})(this);
+function Runtime(observer) {
+	this.observer = observer;
 }
+
+var isWrapped = Runtime.prototype.isWrapped = function(val) {
+	return val instanceof TaggedValue;
+};
+
+var unwrap = Runtime.prototype.unwrap = function(val) {
+	return isWrapped(val) ? val.getValue() : val;
+};
+
+var wrapGlobal = Runtime.prototype.wrapGlobal = function(pos, global) {
+	return new TaggedValue(global, this.observer.tagGlobal(global));
+};
+
+var wrapLiteral = Runtime.prototype.wrapLiteral = function(pos, lit) {
+	var res = new TaggedValue(lit, this.observer.tagLiteral(lit));
+	if(Object(lit) === lit) {
+		Object.defineProperty(lit, "__properties", { enumerable: false, writable: false, value: {} });
+	}
+	return res;
+};
+
+var wrapForInVar = Runtime.prototype.wrapForInVar = function(pos, prop) {
+	return new TaggedValue(prop, this.observer.tagForInVar(prop));
+};
+
+var wrapNativeException = Runtime.prototype.wrapNativeException = function(pos, exn) {
+	return new TaggedValue(exn, this.observer.tagNativeException(exn));
+};
+
+var wrapNativeArgument = Runtime.prototype.wrapNativeArgument = function(callee, arg, idx) {
+	return new TaggedValue(arg, this.observer.tagNativeArgument(callee, arg, idx+1));
+};
+
+var wrapNativeReceiver = Runtime.prototype.wrapNativeReceiver = function(callee, recv) {
+	return new TaggedValue(recv, this.observer.tagNativeArgument(callee, recv, 0));
+};
+
+var enterScript = Runtime.prototype.enterScript = function() {};
+var leaveScript = Runtime.prototype.leaveScript = function() {};
+var enterFunction = Runtime.prototype.enterFunction = function() {};
+var leaveFunction = Runtime.prototype.leaveFunction = function() {};
+
+var callWrapped = Runtime.prototype.callWrapped = function(recv, args) {
+	try {
+		var wrapped_recv = this.wrapNativeReceiver(args.callee, recv),
+		    wrapped_args = _.map(args, _.bind(wrapNativeArgument, this, args.callee));
+		return args.callee.apply(wrapped_recv, wrapped_args);
+	} catch(e) {
+		throw unwrap(e);
+	}
+};
+
+var methodcall = Runtime.prototype.methodcall = function(pos, recv, msg, args) {
+	return this.funcall(pos, this.propread(null, recv, msg), recv, args);
+};
+
+var funcall = Runtime.prototype.funcall = function(pos, callee, recv, args) {
+	var unwrapped_callee = callee.getValue();
+	if(!unwrapped_callee)
+		debugger;
+	if(unwrapped_callee.__properties) {
+		for(var i=args.length,n=unwrapped_callee.length;i<n;++i)
+			args[i] = this.wrapLiteral();
+		return unwrapped_callee.apply(recv, args);
+	} else {
+		var res = unwrapped_callee.apply(recv.getValue(), _.invoke(args, 'getValue'));
+		if(!isWrapped(res))
+			res = new TaggedValue(res, this.observer.tagNativeResult(res, callee, recv, args));
+		return res;
+	}
+};
+
+var newexpr = Runtime.prototype.newexpr = function(pos, callee, args) {
+	var unwrapped_callee = callee.getValue(), res;
+	if(unwrapped_callee.__properties) {
+		var recv = new TaggedValue(Object.create(unwrapped_callee.prototype), this.observer.tagNewInstance(callee));
+		res = this.methodcall(pos, callee, recv, args);
+		return Object(res) === res ? res : recv;
+	} else {
+		var a = [];
+		for(var i=0,n=args.length;i<n;++i)
+			a[i] = 'args[' + i + ']';
+		res = eval('new unwrapped_callee(' + a.join() + ')');
+		if(!isWrapped(res))
+			res = new TaggedValue(res, this.observer.tagNewNativeInstance(res, callee, args));
+		return res;
+	}
+};
+
+var prepareArguments = Runtime.prototype.prepareArguments = function(args) {
+	var wrapped_args = this.wrapLiteral(args);
+	var new_args = new TaggedValue(arguments, wrapped_args.getTag());
+	
+	for(var i=0,n=args.length;i<n;++i)
+		this.propwrite(null, new_args, this.wrapLiteral(i), false, args[i]);
+		
+	for(;i<arguments.length;++i)
+		delete args[i];
+	
+	this.propwrite(null, new_args, this.wrapLiteral("__proto__"), false, this.wrapLiteral(args.__proto__));
+	this.propwrite(null, new_args, this.wrapLiteral("length"), false, this.wrapLiteral(args.length));
+	this.propwrite(null, new_args, this.wrapLiteral("callee"), false, this.wrapLiteral(args.callee));
+	
+	return new_args;
+};
+
+var binop = Runtime.prototype.binop = function(pos, left, op, right) {
+	if(!isWrapped(left) || !isWrapped(right))
+		debugger;
+	var res = eval("left.getValue()" + op + " right.getValue()");
+	return new TaggedValue(res, this.observer.tagBinOpResult(res, left.getTag(), op, right.getTag()));
+};
+
+var unop = Runtime.prototype.unop = function(pos, op, arg) {
+	var res = eval(op + " arg.getValue()");
+	return new TaggedValue(res, this.observer.tagUnOpResult(res, op, arg.getTag()));
+};
+
+function getPropertyTag(obj, prop) {
+	return obj.hasOwnProperty('__properties') && obj.__properties['$' + prop];
+}
+
+function setPropertyTag(obj, prop, tag) {
+	if(obj.hasOwnProperty('__properties'))
+		obj.__properties['$' + prop] = tag;
+}
+
+function deletePropertyTag(obj, prop) {
+	if(obj.hasOwnProperty('__properties'))
+		delete obj.__properties['$' + prop];
+}
+
+var propread = Runtime.prototype.propread = function(pos, obj, prop, isDynamic) {
+	var unwrapped_obj = obj.getValue(), unwrapped_prop = prop.getValue();
+	var res = unwrapped_obj[unwrapped_prop];
+	var stored_tag = getPropertyTag(unwrapped_obj, unwrapped_prop);
+	return new TaggedValue(res, this.observer.tagPropRead(res, obj.getTag(), prop.getTag(), stored_tag));
+};
+
+var propwrite = Runtime.prototype.propwrite = function(pos, obj, prop, isDynamic, val) {
+	var unwrapped_obj = obj.getValue(), unwrapped_prop = prop.getValue(), unwrapped_val = val.getValue();
+	var old_tag = getPropertyTag(unwrapped_obj, unwrapped_prop);
+	unwrapped_obj[unwrapped_prop] = unwrapped_val;
+	setPropertyTag(unwrapped_obj, unwrapped_prop, this.observer.tagPropWrite(unwrapped_val, obj.getTag(), prop.getTag(), val.getTag(), old_tag));
+	return val;
+};
+
+var propdel = Runtime.prototype.propdel = function(pos, obj, prop, isDynamic) {
+	var unwrapped_obj = obj.getValue(), unwrapped_prop = prop.getValue();
+	var res = delete unwrapped_obj[unwrapped_prop];
+	deletePropertyTag(unwrapped_obj, unwrapped_prop);
+	return res;
+};
+
+module.exports = Runtime;
