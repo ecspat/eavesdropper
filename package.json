@@ -1,6 +1,6 @@
 {
     "name": "eavesdropper",
-    "version": "0.1.0",
+    "version": "0.2.0",
     "author": "Max Schaefer <schaefer@ntu.edu.sg>",
     "description": "Dynamic analysis toolkit for JavaScript",
     "repository": {

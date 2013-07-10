@@ -46,13 +46,13 @@ function mkAssignStmt(lhs, rhs) {
 	};
 }
 
-function mkRuntimeCall(m, nd, args) {
+function mkRuntimeCall(m, nd, props, args) {
 	args = args || [];
-	if (nd) {
+	if (nd && props) {
 		var pos = astutil.getPosition(nd);
 		args = [{
 			type: 'ObjectExpression',
-			properties: ['url', 'start_line', 'start_offset', 'end_line', 'end_offset'].map(function(p) {
+			properties: props.map(function(p) {
 				return {
 					type: 'Property',
 					key: mkIdentifier(p),
@@ -81,10 +81,10 @@ function mkRuntimeCall(m, nd, args) {
 	};
 }
 
-function mkRuntimeCallStmt(m, nd, args) {
+function mkRuntimeCallStmt(m, nd, props, args) {
 	return {
 		type: 'ExpressionStatement',
-		expression: mkRuntimeCall(m, nd, args)
+		expression: mkRuntimeCall(m, nd, props, args)
 	};
 }
 
@@ -137,10 +137,10 @@ function instrument_node(nd) {
 	switch(nd.type) {
 	case 'Program':
 		var global_closure_call = nd.body[0].expression;
-		global_closure_call['arguments'][0] = mkRuntimeCall('wrapGlobal', nd, [global_closure_call['arguments'][0]]);
+		global_closure_call['arguments'][0] = mkRuntimeCall('wrapGlobal', nd, [], [global_closure_call['arguments'][0]]);
 		instrument_node(global_closure_call.callee.body);
 		global_closure_call.callee.body.body = [
-			mkRuntimeCallStmt("enterScript", nd),
+			mkRuntimeCallStmt("enterScript", nd, ['url']),
 			{
 				type: 'TryStatement',
 				block: {
@@ -151,14 +151,14 @@ function instrument_node(nd) {
 				handlers: [],
 				finalizer: {
 					type: 'BlockStatement',
-					body: [mkRuntimeCallStmt("leaveScript", nd)]
+					body: [mkRuntimeCallStmt("leaveScript")]
 				}
 			}];
 		break;
 		
 	case 'VariableDeclaration':
 		nd.declarations.forEach(function(decl) {
-			decl.init = mkRuntimeCall("wrapLiteral", decl);
+			decl.init = mkRuntimeCall("wrapLiteral", decl, ['start_offset']);
 		});
 		break;
 		
@@ -172,43 +172,43 @@ function instrument_node(nd) {
 			case 'ArrayExpression':
 			case 'Literal':
 				instrument_node(right);
-				nd.expression.right = mkRuntimeCall('wrapLiteral', nd, [right]);
+				nd.expression.right = mkRuntimeCall('wrapLiteral', nd, ['start_offset'], [right]);
 				break;
 				
 			case 'CallExpression':
 				if(right.callee.type === 'Identifier') {
-					nd.expression.right = mkRuntimeCall('funcall', nd, [right.callee].concat(right['arguments']));
+					nd.expression.right = mkRuntimeCall('funcall', nd, ['start_offset'], [right.callee, mkIdentifier('__global'), mkArray(right['arguments'])]);
 				} else {
-					nd.expression.right = mkRuntimeCall('methodcall', nd, [right.callee.object, right.callee.property].concat(right['arguments']));
+					nd.expression.right = mkRuntimeCall('methodcall', nd, ['start_offset'], [right.callee.object, right.callee.property, mkArray(right['arguments'])]);
 				}
 				break;
 				
 			case 'NewExpression':
-				nd.expression.right = mkRuntimeCall('newexpr', nd, [right.callee].concat(right['arguments']));
+				nd.expression.right = mkRuntimeCall('newexpr', nd, ['start_offset'], [right.callee, mkArray(right['arguments'])]);
 				break;
 				
 			case 'MemberExpression':
-				nd.expression.right = mkRuntimeCall('propread', nd, [right.object, right.property, mkLiteral(!!astutil.getAttribute(right, 'isComputed'))]);
+				nd.expression.right = mkRuntimeCall('propread', nd, ['start_offset'], [right.object, right.property, mkLiteral(!!astutil.getAttribute(right, 'isComputed'))]);
 				break;
 				
 			case 'Identifier':
 				if(left.type === 'MemberExpression') {
-					nd.expression = mkRuntimeCall('propwrite', nd, [left.object, left.property, mkLiteral(!!astutil.getAttribute(left, 'isComputed')), right]);
+					nd.expression = mkRuntimeCall('propwrite', nd, ['start_offset'], [left.object, left.property, mkLiteral(!!astutil.getAttribute(left, 'isComputed')), right]);
 				}
 				break;
 				
 			case 'LogicalExpression':
 			case 'BinaryExpression':
-				nd.expression.right = mkRuntimeCall('binop', nd, [right.left, mkLiteral(right.operator), right.right]);
+				nd.expression.right = mkRuntimeCall('binop', nd, ['start_offset'], [right.left, mkLiteral(right.operator), right.right]);
 				break;
 				
 			case 'UnaryExpression':
 				if(right.operator === 'delete') {
 					if(right.argument.type === 'MemberExpression') {
-						nd.expression.right = mkRuntimeCall('propdel', nd, [right.argument.object, right.argument.property, mkLiteral(!!astutil.getAttribute(right.argument, 'isComputed'))]);
+						nd.expression.right = mkRuntimeCall('propdel', nd, ['start_offset'], [right.argument.object, right.argument.property, mkLiteral(!!astutil.getAttribute(right.argument, 'isComputed'))]);
 					}
 				} else {
-					nd.expression.right = mkRuntimeCall('unop', nd, [mkLiteral(right.operator), right.argument]);
+					nd.expression.right = mkRuntimeCall('unop', nd, ['start_offset'], [mkLiteral(right.operator), right.argument]);
 				}
 				break;
 				
@@ -252,7 +252,7 @@ function instrument_node(nd) {
 		
 	case 'ForInStatement':
 		var loopvar = nd.left.name;
-		nd.body.body.unshift(mkAssignStmt(mkIdentifier(loopvar), mkRuntimeCall('wrapForInVar', nd, [mkIdentifier(loopvar)])));
+		nd.body.body.unshift(mkAssignStmt(mkIdentifier(loopvar), mkRuntimeCall('wrapForInVar', nd, ['start_offset'], [mkIdentifier(loopvar)])));
 		break;
 		
 	case 'TryStatement':
@@ -260,15 +260,12 @@ function instrument_node(nd) {
 		if(nd.handlers.length > 0) {
 			var exnvar = nd.handlers[0].param.name;
 			instrument_node(nd.handlers[0].body);
-			nd.handlers[0].body.body.unshift(mkAssignStmt(mkIdentifier(exnvar), mkRuntimeCall('wrapNativeExn', nd, [mkIdentifier(exnvar)])));
+			nd.handlers[0].body.body.unshift(mkAssignStmt(mkIdentifier(exnvar), mkRuntimeCall('wrapNativeExn', nd, ['start_offset'], [mkIdentifier(exnvar)])));
 		}
 		instrument_node(nd.finalizer);
 		break;
 		
 	case 'ReturnStatement':
-		nd.argument = mkRuntimeCall('unwrapIfCallerIsNative', nd, [nd.argument]);
-		break;
-		
 	case 'Literal':
 	case 'Identifier':
 	case 'DebuggerStatement':
@@ -285,7 +282,7 @@ function instrument_node(nd) {
 			// TODO: wrap all arguments (if caller is native), undefined arguments (if not)
 			throw new Error("cannot handle this yet");
 		} else {
-			nd.body.body.unshift(mkAssignStmt(mkIdentifier('arguments'), mkRuntimeCall('prepareArguments', nd, [mkIdentifier('arguments')])));
+			nd.body.body.unshift(mkAssignStmt(mkIdentifier('arguments'), mkRuntimeCall('prepareArguments', nd, null, [mkIdentifier('arguments')])));
 		}
 
 		nd.body.body = [
@@ -294,15 +291,15 @@ function instrument_node(nd) {
 				test: {
 					type: 'UnaryExpression',
 					operator: '!',
-					argument: mkRuntimeCall('isWrapped', nd, [mkThis()])
+					argument: mkRuntimeCall('isWrapped', nd, null, [mkThis()])
 				},
 				consequent: {
 					type: 'ReturnStatement',
-					argument: mkRuntimeCall('callWrapped', nd, [mkThis(), mkIdentifier('arguments')])
+					argument: mkRuntimeCall('callWrapped', nd, null, [mkThis(), mkIdentifier('arguments')])
 				},
 				alternate: null
 			},
-			mkRuntimeCallStmt('enterFunction', nd), {
+			mkRuntimeCallStmt('enterFunction', nd, ['url', 'start_offset']), {
 				type: 'TryStatement',
 				block: {
 					type: 'BlockStatement',
