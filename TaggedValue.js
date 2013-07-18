@@ -12,8 +12,6 @@
 /*global module*/
 
 function TaggedValue(val, tag) {
-	if(tag === false)
-		debugger;
 	this.value = val;
 	this.tag = tag;
 }
