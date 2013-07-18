@@ -27,7 +27,12 @@ var unwrap = Runtime.prototype.unwrap = function(val) {
 };
 
 var wrapGlobal = Runtime.prototype.wrapGlobal = function(pos, global) {
-	return new TaggedValue(global, this.observer.tagGlobal(global));
+	var tag = this.observer.tagGlobal(global);
+	Object.defineProperty(global, "__properties", { enumerable: false, writable: false, value: {} });
+	Object.defineProperty(global, "__tag", { enumerable: false, writable: false, value: tag });
+	var tagged_global = new TaggedValue(global, tag);
+	this.observer.setGlobal(tagged_global);
+	return tagged_global;
 };
 
 var wrapLiteral = Runtime.prototype.wrapLiteral = function(pos, lit) {
@@ -35,13 +40,19 @@ var wrapLiteral = Runtime.prototype.wrapLiteral = function(pos, lit) {
 	
 	if(Object(lit) === lit) {
 		Object.defineProperty(lit, "__properties", { enumerable: false, writable: false, value: {} });
+		Object.defineProperty(lit, "__tag", { enumerable: false, writable: false, value: res.getTag() });
 		
 		for(var p in lit) {
 			if(lit.hasOwnProperty(p)) {
 				var v = lit[p];
 				lit[p] = v.getValue();
-				setPropertyTag(lit, p, v.getTag());
+				this.propwrite(pos, res, new TaggedValue(p, this.observer.tagLiteral(p)), false, v);
 			}
+		}
+		
+		if(typeof lit === 'function') {
+			this.propwrite(pos, res, new TaggedValue('prototype', this.observer.tagLiteral('prototype')), false, new TaggedValue(lit.prototype, this.observer.tagDefaultPrototype(lit.prototype)));
+			// also tag name, arguments, length, caller? what about prototype.constructor?
 		}
 	}
 	return res;
@@ -65,8 +76,18 @@ var wrapNativeReceiver = Runtime.prototype.wrapNativeReceiver = function(callee,
 
 var enterScript = Runtime.prototype.enterScript = function() {};
 var leaveScript = Runtime.prototype.leaveScript = function() {};
-var enterFunction = Runtime.prototype.enterFunction = function() {};
-var leaveFunction = Runtime.prototype.leaveFunction = function() {};
+
+var enterFunction = Runtime.prototype.enterFunction = function(pos, callee) {
+	this.observer.enterFunction(callee);
+};
+
+var returnFromFunction = Runtime.prototype.returnFromFunction = function(retval) {
+	this.observer.returnFromFunction(retval);
+};
+
+var leaveFunction = Runtime.prototype.leaveFunction = function() {
+	this.observer.leaveFunction();
+};
 
 var callWrapped = Runtime.prototype.callWrapped = function(recv, args) {
 	try {
@@ -84,9 +105,11 @@ var methodcall = Runtime.prototype.methodcall = function(pos, recv, msg, args) {
 	return this.funcall(pos, this.propread(null, recv, msg), recv, args);
 };
 
-var funcall = Runtime.prototype.funcall = function(pos, callee, recv, args) {
+var funcall = Runtime.prototype.funcall = function(pos, callee, recv, args, isNew) {
+	if(!isNew)
+		this.observer.funcall(pos, callee, recv, args);
 	var unwrapped_callee = callee.getValue();
-	if(unwrapped_callee.__properties) {
+	if(unwrapped_callee.__tag) {
 		for(var i=args.length,n=unwrapped_callee.length;i<n;++i)
 			args[i] = new TaggedValue(void(0), this.observer.tagLiteral());
 		return unwrapped_callee.apply(recv, args);
@@ -99,10 +122,12 @@ var funcall = Runtime.prototype.funcall = function(pos, callee, recv, args) {
 };
 
 var newexpr = Runtime.prototype.newexpr = function(pos, callee, args) {
+	this.observer.newexpr(pos, callee, args);
 	var unwrapped_callee = callee.getValue(), res;
-	if(unwrapped_callee.__properties) {
-		var recv = new TaggedValue(Object.create(unwrapped_callee.prototype), this.observer.tagNewInstance(callee));
-		res = this.funcall(pos, callee, recv, args);
+	if(unwrapped_callee.__tag) {
+		var new_instance = Object.create(unwrapped_callee.prototype);
+		var recv = new TaggedValue(new_instance, this.observer.tagNewInstance(new_instance, callee, args));
+		res = this.funcall(pos, callee, recv, args, true);
 		return Object(res.getValue()) === res.getValue() ? res : recv;
 	} else {
 		var a = [];
@@ -134,19 +159,19 @@ var prepareArguments = Runtime.prototype.prepareArguments = function(args) {
 	arguments.callee = args_copy.callee;
 	setPropertyTag(arguments, '__proto__', this.observer.tagLiteral(arguments.__proto__));
 	setPropertyTag(arguments, 'length', this.observer.tagLiteral(arguments.length));
-	setPropertyTag(arguments, 'callee', this.observer.tagLiteral(arguments.callee));
+	setPropertyTag(arguments, 'callee', arguments.callee.hasOwnProperty('__tag') && arguments.callee.__tag || this.observer.tagLiteral(arguments.callee));
 	
 	return new_args;
 };
 
 var binop = Runtime.prototype.binop = function(pos, left, op, right) {
 	var res = eval("left.getValue()" + op + " right.getValue()");
-	return new TaggedValue(res, this.observer.tagBinOpResult(res, left.getTag(), op, right.getTag()));
+	return new TaggedValue(res, this.observer.tagBinOpResult(res, left, op, right));
 };
 
 var unop = Runtime.prototype.unop = function(pos, op, arg) {
 	var res = eval(op + " arg.getValue()");
-	return new TaggedValue(res, this.observer.tagUnOpResult(res, op, arg.getTag()));
+	return new TaggedValue(res, this.observer.tagUnOpResult(res, op, arg));
 };
 
 function getPropertyTag(obj, prop) {
@@ -167,14 +192,14 @@ var propread = Runtime.prototype.propread = function(pos, obj, prop, isDynamic) 
 	var unwrapped_obj = obj.getValue(), unwrapped_prop = prop.getValue();
 	var res = unwrapped_obj[unwrapped_prop];
 	var stored_tag = getPropertyTag(unwrapped_obj, unwrapped_prop);
-	return new TaggedValue(res, this.observer.tagPropRead(res, obj.getTag(), prop.getTag(), stored_tag));
+	return new TaggedValue(res, this.observer.tagPropRead(res, obj, prop, stored_tag));
 };
 
 var propwrite = Runtime.prototype.propwrite = function(pos, obj, prop, isDynamic, val) {
 	var unwrapped_obj = obj.getValue(), unwrapped_prop = prop.getValue(), unwrapped_val = val.getValue();
 	var old_tag = getPropertyTag(unwrapped_obj, unwrapped_prop);
 	unwrapped_obj[unwrapped_prop] = unwrapped_val;
-	setPropertyTag(unwrapped_obj, unwrapped_prop, this.observer.tagPropWrite(unwrapped_val, obj.getTag(), prop.getTag(), val.getTag(), old_tag));
+	setPropertyTag(unwrapped_obj, unwrapped_prop, this.observer.tagPropWrite(obj, prop, val, old_tag));
 	return val;
 };
 

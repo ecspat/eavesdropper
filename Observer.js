@@ -14,8 +14,10 @@
 function Observer() {
 }
 
-Observer.prototype.tagGlobal = 
+Observer.prototype.tagGlobal =
+Observer.prototype.setGlobal =
 Observer.prototype.tagLiteral =
+Observer.prototype.tagDefaultPrototype =
 Observer.prototype.tagForInVar =
 Observer.prototype.tagNativeException =
 Observer.prototype.tagNativeArgument =
@@ -23,16 +25,22 @@ Observer.prototype.tagNativeResult =
 Observer.prototype.tagNewInstance =
 Observer.prototype.tagNewNativeInstance =
 Observer.prototype.tagUnOpResult =
-Observer.prototype.tagBinOpResult = function() {
+Observer.prototype.tagBinOpResult =
+Observer.prototype.enterFunction =
+Observer.prototype.returnFromFunction =
+Observer.prototype.leaveFunction =
+Observer.prototype.funcall =
+Observer.prototype.newexpr =
+function() {
 	return null;
 };
 
-Observer.prototype.tagPropRead = function(val, obj_tag, prop_tag, stored_tag) {
+Observer.prototype.tagPropRead = function(val, obj, prop, stored_tag) {
 	return stored_tag;
 };
 
-Observer.prototype.tagPropWrite = function(val, obj_tag, prop_tag, val_tag, stored_tag) {
-	return val_tag;
+Observer.prototype.tagPropWrite = function(obj, prop, val, stored_tag) {
+	return val.getTag();
 };
 
 module.exports = Observer;

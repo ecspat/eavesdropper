@@ -289,6 +289,11 @@ function instrument_node(nd) {
 			nd.body.body.unshift(mkAssignStmt(mkIdentifier('arguments'), mkRuntimeCall('prepareArguments', nd, null, [mkIdentifier('arguments')])));
 		}
 
+		var body = nd.body.body,
+		    n = body.length,
+		    retvar = astutil.getAttribute(nd, 'ret_var');
+		body[n] = body[n-1];
+		body[n-1] = mkRuntimeCallStmt('returnFromFunction', nd, null, [mkIdentifier(retvar)]);
 		nd.body.body = [
 			{
 				type: 'IfStatement',
@@ -303,11 +308,12 @@ function instrument_node(nd) {
 				},
 				alternate: null
 			},
-			mkRuntimeCallStmt('enterFunction', nd, ['url', 'start_offset']), {
+			mkRuntimeCallStmt('enterFunction', nd, ['url', 'start_offset'], [mkMemberExpr(mkIdentifier('arguments'), mkIdentifier('callee'), false)]),
+			{
 				type: 'TryStatement',
 				block: {
 					type: 'BlockStatement',
-					body: nd.body.body
+					body: body
 				},
 				guardedHandlers: [],
 				handlers: [],
