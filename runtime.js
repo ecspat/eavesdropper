@@ -78,7 +78,7 @@ var enterScript = Runtime.prototype.enterScript = function() {};
 var leaveScript = Runtime.prototype.leaveScript = function() {};
 
 var enterFunction = Runtime.prototype.enterFunction = function(pos, callee) {
-	this.observer.enterFunction(callee);
+	this.observer.enterFunction(pos, new TaggedValue(callee, callee.__tag));
 };
 
 var returnFromFunction = Runtime.prototype.returnFromFunction = function(retval) {
@@ -95,7 +95,8 @@ var callWrapped = Runtime.prototype.callWrapped = function(recv, args) {
 		    wrapped_args = _.map(args, _.bind(wrapNativeArgument, this, args.callee));
 		for(var i=wrapped_args.length,n=args.callee.length;i<n;++i)
 			wrapped_args[i] = new TaggedValue(void(0), this.observer.tagLiteral());
-		return args.callee.apply(wrapped_recv, wrapped_args);
+		var wrapped_res = args.callee.apply(wrapped_recv, wrapped_args);
+		return wrapped_res.getValue();
 	} catch(e) {
 		throw unwrap(e);
 	}
