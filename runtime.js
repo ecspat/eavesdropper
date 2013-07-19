@@ -29,7 +29,6 @@ var unwrap = Runtime.prototype.unwrap = function(val) {
 var wrapGlobal = Runtime.prototype.wrapGlobal = function(pos, global) {
 	var tag = this.observer.tagGlobal(global);
 	Object.defineProperty(global, "__properties", { enumerable: false, writable: false, value: {} });
-	Object.defineProperty(global, "__tag", { enumerable: false, writable: false, value: tag });
 	var tagged_global = new TaggedValue(global, tag);
 	this.observer.setGlobal(tagged_global);
 	return tagged_global;
@@ -40,7 +39,6 @@ var wrapLiteral = Runtime.prototype.wrapLiteral = function(pos, lit) {
 	
 	if(Object(lit) === lit) {
 		Object.defineProperty(lit, "__properties", { enumerable: false, writable: false, value: {} });
-		Object.defineProperty(lit, "__tag", { enumerable: false, writable: false, value: res.getTag() });
 		
 		for(var p in lit) {
 			if(lit.hasOwnProperty(p)) {
@@ -51,6 +49,7 @@ var wrapLiteral = Runtime.prototype.wrapLiteral = function(pos, lit) {
 		}
 		
 		if(typeof lit === 'function') {
+			Object.defineProperty(lit, "__instrumented", { enumerable: false, writable: false, value: true });
 			this.propwrite(pos, res, new TaggedValue('prototype', this.observer.tagLiteral('prototype')), false, new TaggedValue(lit.prototype, this.observer.tagDefaultPrototype(lit.prototype)));
 			// also tag name, arguments, length, caller? what about prototype.constructor?
 		}
@@ -103,14 +102,14 @@ var callWrapped = Runtime.prototype.callWrapped = function(recv, args) {
 };
 
 var methodcall = Runtime.prototype.methodcall = function(pos, recv, msg, args) {
-	return this.funcall(pos, this.propread(null, recv, msg), recv, args);
+	return this.funcall(pos, this.propread(null, recv, msg), recv, args, 'method');
 };
 
-var funcall = Runtime.prototype.funcall = function(pos, callee, recv, args, isNew) {
-	if(!isNew)
-		this.observer.funcall(pos, callee, recv, args);
+var funcall = Runtime.prototype.funcall = function(pos, callee, recv, args, kind) {
+	if(kind !== 'new')
+		this.observer.funcall(pos, callee, recv, args, kind);
 	var unwrapped_callee = callee.getValue();
-	if(unwrapped_callee.__tag) {
+	if(unwrapped_callee.__instrumented) {
 		for(var i=args.length,n=unwrapped_callee.length;i<n;++i)
 			args[i] = new TaggedValue(void(0), this.observer.tagLiteral());
 		return unwrapped_callee.apply(recv, args);
@@ -125,10 +124,10 @@ var funcall = Runtime.prototype.funcall = function(pos, callee, recv, args, isNe
 var newexpr = Runtime.prototype.newexpr = function(pos, callee, args) {
 	this.observer.newexpr(pos, callee, args);
 	var unwrapped_callee = callee.getValue(), res;
-	if(unwrapped_callee.__tag) {
+	if(unwrapped_callee.__instrumented) {
 		var new_instance = Object.create(unwrapped_callee.prototype);
 		var recv = new TaggedValue(new_instance, this.observer.tagNewInstance(new_instance, callee, args));
-		res = this.funcall(pos, callee, recv, args, true);
+		res = this.funcall(pos, callee, recv, args, 'new');
 		return Object(res.getValue()) === res.getValue() ? res : recv;
 	} else {
 		var a = [];
