@@ -92,8 +92,6 @@ var callWrapped = Runtime.prototype.callWrapped = function(recv, args) {
 	try {
 		var wrapped_recv = this.wrapNativeReceiver(args.callee, recv),
 		    wrapped_args = _.map(args, _.bind(wrapNativeArgument, this, args.callee));
-		for(var i=wrapped_args.length,n=args.callee.length;i<n;++i)
-			wrapped_args[i] = new TaggedValue(void(0), this.observer.tagLiteral());
 		var wrapped_res = args.callee.apply(wrapped_recv, wrapped_args);
 		return wrapped_res.getValue();
 	} catch(e) {
