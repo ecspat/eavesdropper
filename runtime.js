@@ -106,15 +106,31 @@ var methodcall = Runtime.prototype.methodcall = function(pos, recv, msg, args) {
 };
 
 var funcall = Runtime.prototype.funcall = function(pos, callee, recv, args, kind) {
+	var unwrapped_callee = callee.getValue(), i, n;
+	switch(unwrapped_callee) {
+	case Function.prototype.call:
+		return this.funcall(pos, recv, args[0], Array.prototype.slice.call(args, 1), 'method');
+	case Function.prototype.apply:
+		var real_args = [];
+		for(i=0,n=args[1].value.length;i<n;++i) {
+			var val = args[1].value[i];
+			real_args[i] = new TaggedValue(val, getPropertyTag(args[1].value, i) || this.observer.tagNativeProperty(args[1].value, i, val));
+		}
+		return this.funcall(pos, recv, args[0], real_args, 'method');
+	}
+	
 	if(kind !== 'new')
 		this.observer.funcall(pos, callee, recv, args, kind);
-	var unwrapped_callee = callee.getValue();
 	if(unwrapped_callee.__instrumented) {
-		for(var i=args.length,n=unwrapped_callee.length;i<n;++i)
+		for(i=args.length,n=unwrapped_callee.length;i<n;++i)
 			args[i] = new TaggedValue(void(0), this.observer.tagLiteral());
 		return unwrapped_callee.apply(recv, args);
 	} else {
-		var res = unwrapped_callee.apply(recv.getValue(), _.invoke(args, 'getValue'));
+		var unwrapped_args = [];
+		for(i=0,n=args.length;i<n;++i) {
+			unwrapped_args[i] = args[i].getValue();
+		}
+		var res = unwrapped_callee.apply(recv.getValue(), unwrapped_args);
 		if(!isWrapped(res))
 			res = new TaggedValue(res, this.observer.tagNativeResult(res, callee, recv, args));
 		return res;
@@ -191,15 +207,14 @@ function deletePropertyTag(obj, prop) {
 var propread = Runtime.prototype.propread = function(pos, obj, prop, isDynamic) {
 	var unwrapped_obj = obj.getValue(), unwrapped_prop = prop.getValue();
 	var res = unwrapped_obj[unwrapped_prop];
-	var stored_tag = getPropertyTag(unwrapped_obj, unwrapped_prop);
+	var stored_tag = getPropertyTag(unwrapped_obj, unwrapped_prop) || this.observer.tagNativeProperty(unwrapped_obj, unwrapped_prop, res);
 	return new TaggedValue(res, this.observer.tagPropRead(res, obj, prop, stored_tag));
 };
 
 var propwrite = Runtime.prototype.propwrite = function(pos, obj, prop, isDynamic, val) {
 	var unwrapped_obj = obj.getValue(), unwrapped_prop = prop.getValue(), unwrapped_val = val.getValue();
-	var old_tag = getPropertyTag(unwrapped_obj, unwrapped_prop);
 	unwrapped_obj[unwrapped_prop] = unwrapped_val;
-	setPropertyTag(unwrapped_obj, unwrapped_prop, this.observer.tagPropWrite(obj, prop, val, old_tag));
+	setPropertyTag(unwrapped_obj, unwrapped_prop, this.observer.tagPropWrite(obj, prop, val));
 	return val;
 };
 

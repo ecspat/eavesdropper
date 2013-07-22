@@ -22,6 +22,7 @@ Observer.prototype.tagForInVar =
 Observer.prototype.tagNativeException =
 Observer.prototype.tagNativeArgument =
 Observer.prototype.tagNativeResult =
+Observer.prototype.tagNativeProperty =
 Observer.prototype.tagNewInstance =
 Observer.prototype.tagNewNativeInstance =
 Observer.prototype.tagUnOpResult =
