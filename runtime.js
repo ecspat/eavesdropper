@@ -122,8 +122,6 @@ var funcall = Runtime.prototype.funcall = function(pos, callee, recv, args, kind
 	if(kind !== 'new')
 		this.observer.funcall(pos, callee, recv, args, kind);
 	if(unwrapped_callee.__instrumented) {
-		for(i=args.length,n=unwrapped_callee.length;i<n;++i)
-			args[i] = new TaggedValue(void(0), this.observer.tagLiteral());
 		return unwrapped_callee.apply(recv, args);
 	} else {
 		var unwrapped_args = [];
@@ -162,14 +160,18 @@ var prepareArguments = Runtime.prototype.prepareArguments = function(args) {
 		
 	Object.defineProperty(arguments, "__properties", { enumerable: false, writable: false, value: {} });
 	
+	// separate tags and values of actual arguments
 	for(var i=0,n=args_copy.length;i<n;++i) {
 		arguments[i] = args_copy[i].getValue();
-		setPropertyTag(arguments, args_copy[i].getTag());
+		setPropertyTag(arguments, i, args_copy[i].getTag());
 	}
-		
-	for(;i<arguments.length;++i)
-		delete arguments[i];
 	
+	// finally, delete any additional elements of our local arguments array
+	for(i=args_copy.length,n=arguments.length;i<n;++i) {
+		delete arguments[i];
+	}
+	
+	// set up non-numeric properties of arguments array
 	arguments.__proto__ = args_copy.__proto__;
 	arguments.length = args_copy.length;
 	arguments.callee = args_copy.callee;

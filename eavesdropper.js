@@ -34,6 +34,13 @@ function mkArray(elts) {
 	return { type: 'ArrayExpression', elements: elts };
 }
 
+function mkOr(x, y) {
+	return { type: 'LogicalExpression',
+			 operator: '||',
+			 left: x,
+			 right: y };
+}
+
 function mkAssignStmt(lhs, rhs) {
 	return {
 		type: 'ExpressionStatement',
@@ -287,6 +294,11 @@ function instrument_node(nd) {
 			throw new Error("cannot handle this yet");
 		} else {
 			nd.body.body.unshift(mkAssignStmt(mkIdentifier('arguments'), mkRuntimeCall('prepareArguments', nd, null, [mkIdentifier('arguments')])));
+		}
+		
+		// insert code to wrap any arguments that are falsy---this can only be the case if they weren't explicitly passed
+		for(var i=nd.params.length-1;i>=0;--i) {
+			nd.body.body.unshift(mkAssignStmt(mkIdentifier(nd.params[i].name), mkOr(mkIdentifier(nd.params[i].name), mkRuntimeCall('wrapLiteral', nd.params[i], ['start_offset']))));
 		}
 
 		var body = nd.body.body,
