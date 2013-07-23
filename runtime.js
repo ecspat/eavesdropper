@@ -35,7 +35,7 @@ var wrapGlobal = Runtime.prototype.wrapGlobal = function(pos, global) {
 };
 
 var wrapLiteral = Runtime.prototype.wrapLiteral = function(pos, lit) {
-	var res = new TaggedValue(lit, this.observer.tagLiteral(lit));
+	var res = new TaggedValue(lit, this.observer.tagLiteral(pos, lit));
 	
 	if(Object(lit) === lit) {
 		Object.defineProperty(lit, "__properties", { enumerable: false, writable: false, value: {} });
@@ -44,13 +44,13 @@ var wrapLiteral = Runtime.prototype.wrapLiteral = function(pos, lit) {
 			if(lit.hasOwnProperty(p)) {
 				var v = lit[p];
 				lit[p] = v.getValue();
-				this.propwrite(pos, res, new TaggedValue(p, this.observer.tagLiteral(p)), false, v);
+				this.propwrite(pos, res, new TaggedValue(p, this.observer.tagLiteral(null, p)), false, v);
 			}
 		}
 		
 		if(typeof lit === 'function') {
 			Object.defineProperty(lit, "__instrumented", { enumerable: false, writable: false, value: true });
-			this.propwrite(pos, res, new TaggedValue('prototype', this.observer.tagLiteral('prototype')), false, new TaggedValue(lit.prototype, this.observer.tagDefaultPrototype(lit.prototype)));
+			this.propwrite(pos, res, new TaggedValue('prototype', this.observer.tagLiteral(null, 'prototype')), false, new TaggedValue(lit.prototype, this.observer.tagDefaultPrototype(res, lit.prototype)));
 			// also tag name, arguments, length, caller? what about prototype.constructor?
 		}
 	}
@@ -154,7 +154,7 @@ var newexpr = Runtime.prototype.newexpr = function(pos, callee, args) {
 
 var prepareArguments = Runtime.prototype.prepareArguments = function(args) {
 	var args_copy = args,
-		new_args = new TaggedValue(arguments, this.observer.tagLiteral(args));
+		new_args = new TaggedValue(arguments, this.observer.tagLiteral(null, args));
 		
 	Object.defineProperty(arguments, "__properties", { enumerable: false, writable: false, value: {} });
 	
@@ -173,9 +173,9 @@ var prepareArguments = Runtime.prototype.prepareArguments = function(args) {
 	arguments.__proto__ = args_copy.__proto__;
 	arguments.length = args_copy.length;
 	arguments.callee = args_copy.callee;
-	setPropertyTag(arguments, '__proto__', this.observer.tagLiteral(arguments.__proto__));
-	setPropertyTag(arguments, 'length', this.observer.tagLiteral(arguments.length));
-	setPropertyTag(arguments, 'callee', arguments.callee.hasOwnProperty('__tag') && arguments.callee.__tag || this.observer.tagLiteral(arguments.callee));
+	setPropertyTag(arguments, '__proto__', this.observer.tagLiteral(null, arguments.__proto__));
+	setPropertyTag(arguments, 'length', this.observer.tagLiteral(null, arguments.length));
+	setPropertyTag(arguments, 'callee', arguments.callee.hasOwnProperty('__tag') && arguments.callee.__tag || this.observer.tagLiteral(null, arguments.callee));
 	
 	return new_args;
 };
@@ -195,8 +195,9 @@ function getPropertyTag(obj, prop) {
 }
 
 function setPropertyTag(obj, prop, tag) {
-	if(obj.hasOwnProperty('__properties'))
+	if(obj.hasOwnProperty('__properties')) {
 		obj.__properties['$' + prop] = tag;
+	}
 }
 
 function deletePropertyTag(obj, prop) {
