@@ -16,7 +16,7 @@ Command line instrumenter:
 
         node eavesdropper.js file.js
 
-Instrument `file.js` to track events at runtime; write the instrumented version out as `file_inst.js`. The instrumented code assumes that there is an observer object in global variable `__observer`. See `runtime.js` for an example of an observer object that simply logs events.
+Instrument `file.js` to associate a tag with every value in the program; write the instrumented version to stdout. The instrumented code assumes that the global variable `__runtime` contains an instance of `Runtime` as defined in module `runtime.js`, which manages the tagging. The runtime object is agnostic to the semantics of the tags: handling of tags is delegated to an observer object. See the Dain project for an example of how to use an observer for dynamically inferring library APIs.
 
 License
 -------
