@@ -77,7 +77,7 @@ var enterScript = Runtime.prototype.enterScript = function() {};
 var leaveScript = Runtime.prototype.leaveScript = function() {};
 
 var enterFunction = Runtime.prototype.enterFunction = function(pos, callee) {
-	this.observer.enterFunction(pos, new TaggedValue(callee, callee.__tag));
+	this.observer.enterFunction(pos, new TaggedValue(callee, this.observer.tagCallee(callee)));
 };
 
 var returnFromFunction = Runtime.prototype.returnFromFunction = function(retval) {

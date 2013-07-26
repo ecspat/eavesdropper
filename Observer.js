@@ -23,6 +23,7 @@ Observer.prototype.tagNativeException =
 Observer.prototype.tagNativeArgument =
 Observer.prototype.tagNativeResult =
 Observer.prototype.tagNativeProperty =
+Observer.prototype.tagCallee =
 Observer.prototype.tagNewInstance =
 Observer.prototype.tagNewNativeInstance =
 Observer.prototype.tagUnOpResult =
