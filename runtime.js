@@ -41,7 +41,8 @@ var wrapLiteral = Runtime.prototype.wrapLiteral = function(pos, lit) {
 		Object.defineProperty(lit, "__properties", { enumerable: false, writable: false, value: {} });
 		
 		for(var p in lit) {
-			if(lit.hasOwnProperty(p)) {
+			var desc = Object.getOwnPropertyDescriptor(lit, p);
+			if(desc && !desc.get && !desc.set) {
 				var v = lit[p];
 				lit[p] = v.getValue();
 				this.propwrite(pos, res, new TaggedValue(p, this.observer.tagLiteral(null, p)), false, v);
