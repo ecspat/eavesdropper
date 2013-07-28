@@ -43,9 +43,7 @@ var wrapLiteral = Runtime.prototype.wrapLiteral = function(pos, lit) {
 		for(var p in lit) {
 			var desc = Object.getOwnPropertyDescriptor(lit, p);
 			if(desc && !desc.get && !desc.set) {
-				var v = lit[p];
-				lit[p] = v.getValue();
-				this.propwrite(pos, res, new TaggedValue(p, this.observer.tagLiteral(null, p)), false, v);
+				this.propwrite(pos, res, new TaggedValue(p, this.observer.tagLiteral(null, p)), false, desc.value);
 			}
 		}
 		
