@@ -34,7 +34,7 @@ var wrapGlobal = Runtime.prototype.wrapGlobal = function(pos, global) {
 	return tagged_global;
 };
 
-var wrapLiteral = Runtime.prototype.wrapLiteral = function(pos, lit) {
+Runtime.prototype.wrapLiteral = function(pos, lit) {
 	var res = new TaggedValue(lit, this.observer.tagLiteral(pos, lit));
 	
 	if(Object(lit) === lit) {
@@ -42,8 +42,12 @@ var wrapLiteral = Runtime.prototype.wrapLiteral = function(pos, lit) {
 		
 		for(var p in lit) {
 			var desc = Object.getOwnPropertyDescriptor(lit, p);
-			if(desc && !desc.get && !desc.set) {
-				this.propwrite(pos, res, new TaggedValue(p, this.observer.tagLiteral(null, p)), false, desc.value);
+			if(desc) {
+				if(desc.get || desc.set) {
+					this.defineAccessors(pos, res, p, false, desc.get, desc.set);
+				} else {
+					this.propwrite(pos, res, new TaggedValue(p, this.observer.tagLiteral(null, p)), false, desc.value);
+				}
 			}
 		}
 		
@@ -204,18 +208,56 @@ function deletePropertyTag(obj, prop) {
 		delete obj.__properties['$' + prop];
 }
 
+function getDescriptor(obj, prop) {
+	if(!obj)
+		return;
+	return Object.getOwnPropertyDescriptor(obj, prop) ||
+		   getDescriptor(Object.getPrototypeOf(obj), prop);
+}
+
 var propread = Runtime.prototype.propread = function(pos, obj, prop, isDynamic) {
 	var unwrapped_obj = obj.getValue(), unwrapped_prop = prop.getValue();
-	var res = unwrapped_obj[unwrapped_prop];
-	var stored_tag = getPropertyTag(unwrapped_obj, unwrapped_prop) || this.observer.tagNativeProperty(unwrapped_obj, unwrapped_prop, res);
-	return new TaggedValue(res, this.observer.tagPropRead(res, obj, prop, stored_tag));
+	var desc = getDescriptor(unwrapped_obj, unwrapped_prop);
+	var res, stored_tag;
+	if(desc && desc.get) {
+		var getter_tag = unwrapped_obj.hasOwnProperty('__properties') && unwrapped_obj.__properties['get ' + unwrapped_prop];
+		return this.funcall(pos, new TaggedValue(desc.get, getter_tag), obj, [], 'method');
+	} else {
+		res = unwrapped_obj[unwrapped_prop];
+		stored_tag = getPropertyTag(unwrapped_obj, unwrapped_prop) || this.observer.tagNativeProperty(unwrapped_obj, unwrapped_prop, res);
+		return new TaggedValue(res, this.observer.tagPropRead(res, obj, prop, stored_tag));
+	}
 };
 
 var propwrite = Runtime.prototype.propwrite = function(pos, obj, prop, isDynamic, val) {
 	var unwrapped_obj = obj.getValue(), unwrapped_prop = prop.getValue(), unwrapped_val = val.getValue();
-	unwrapped_obj[unwrapped_prop] = unwrapped_val;
-	setPropertyTag(unwrapped_obj, unwrapped_prop, this.observer.tagPropWrite(obj, prop, val));
+	var desc = getDescriptor(unwrapped_obj, unwrapped_prop);
+	var res;
+	if(desc && desc.set) {
+		var setter_tag = unwrapped_obj.hasOwnProperty('__properties') && unwrapped_obj.__properties['set ' + unwrapped_prop];
+		this.funcall(pos, new TaggedValue(desc.set, setter_tag), obj, [val], 'method');
+	} else {
+		unwrapped_obj[unwrapped_prop] = unwrapped_val;
+		setPropertyTag(unwrapped_obj, unwrapped_prop, this.observer.tagPropWrite(obj, prop, val));
+	}
 	return val;
+};
+
+Runtime.prototype.defineAccessors = function(pos, obj, prop, isDynamic, getter, setter) {
+	var unwrapped_obj = obj.getValue();
+	Object.defineProperty(unwrapped_obj, prop, { get: getter, set: setter, enumerable: true });
+	if(unwrapped_obj.hasOwnProperty('__properties')) {
+		if(getter) {
+			var getter_tag = this.observer.tagGetter(pos, getter);
+			this.observer.defineGetter(obj.getTag(), prop, getter_tag);
+			unwrapped_obj.__properties['get ' + prop] = getter_tag;
+		}
+		if(setter) {
+			var setter_tag = this.observer.tagSetter(pos, setter);
+			this.observer.defineSetter(obj.getTag(), prop, setter_tag);
+			unwrapped_obj.__properties['set ' + prop] = setter_tag;
+		}
+	}
 };
 
 var propdel = Runtime.prototype.propdel = function(pos, obj, prop, isDynamic) {
