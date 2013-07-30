@@ -216,7 +216,7 @@ function getDescriptor(obj, prop) {
 }
 
 var propread = Runtime.prototype.propread = function(pos, obj, prop, isDynamic) {
-	var unwrapped_obj = obj.getValue(), unwrapped_prop = prop.getValue();
+	var unwrapped_obj = Object(obj.getValue()), unwrapped_prop = prop.getValue();
 	var desc = getDescriptor(unwrapped_obj, unwrapped_prop);
 	var res, stored_tag;
 	if(desc && desc.get) {
@@ -230,7 +230,7 @@ var propread = Runtime.prototype.propread = function(pos, obj, prop, isDynamic) 
 };
 
 var propwrite = Runtime.prototype.propwrite = function(pos, obj, prop, isDynamic, val) {
-	var unwrapped_obj = obj.getValue(), unwrapped_prop = prop.getValue(), unwrapped_val = val.getValue();
+	var unwrapped_obj = Object(obj.getValue()), unwrapped_prop = prop.getValue(), unwrapped_val = val.getValue();
 	var desc = getDescriptor(unwrapped_obj, unwrapped_prop);
 	var res;
 	if(desc && desc.set) {
