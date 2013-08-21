@@ -99,16 +99,16 @@ function mkThis() {
 	return { type: 'ThisExpression' };
 }
 
-function declaresArguments(nd) {
+function declares(nd, x) {
 	for(var i=0,m=nd.params.length;i<m;++i)
-		if(nd.params[i].name === 'arguments')
+		if(nd.params[i].name === x)
 			return true;
 			
 	// Note: V8, Spidermonkey and Rhino all set up an arguments array even if 'arguments' is declared as a local variable, in spite of what ECMA-262 10.6 says
 	if(nd.body.body[0] && nd.body.body[0].type === 'VariableDeclaration') {
 		var decls = nd.body.body[0].declarations;
 		for(var j=0,n=decls.length;j<n;++j)
-			if(decls[j].id.name === 'arguments')
+			if(decls[j].id.name === x)
 				return true;
 	}
 			
@@ -132,6 +132,24 @@ function mkLiteral(v) {
 			value: v
 		};
 	}
+}
+
+// keep track of which enclosing function expression names are currently visible
+var visible_fn_exprs = [];
+
+// update the list of visible function expression names upon entering a new function
+// TODO: should also update when entering 'catch' clause
+function update_visible_fn_exprs(vfe, nd) {
+	var res = [];
+	vfe.forEach(function(id) {
+		if (!declares(nd, id)) {
+			res.push(id);
+		}
+	});
+	if (nd.id && !declares(nd, nd.id.name)) {
+		res.push(nd.id.name);
+	}
+	return res;
 }
 
 function instrument_node(nd) {
@@ -199,6 +217,11 @@ function instrument_node(nd) {
 				break;
 				
 			case 'Identifier':
+				// if this identifier refers to an enclosing function expression, we need to treat it as a literal
+				if(visible_fn_exprs.indexOf(right.name) !== -1) {
+					nd.expression.right = mkRuntimeCall('wrapLiteral', nd, ['start_offset'], [right]);
+				}
+				
 				if(left.type === 'MemberExpression') {
 					nd.expression = mkRuntimeCall('propwrite', nd, ['start_offset'], [left.object, left.property, mkLiteral(!!astutil.getAttribute(left, 'isComputed')), right]);
 				}
@@ -287,9 +310,18 @@ function instrument_node(nd) {
 		break;
 		
 	case 'FunctionExpression':
+		// adjust list of visible function expression names inside the body
+		debugger;
+		var old_visible_fn_exprs = visible_fn_exprs;
+		visible_fn_exprs = update_visible_fn_exprs(visible_fn_exprs, nd);
+		
+		// instrument body
 		instrument_node(nd.body);
 		
-		if (declaresArguments(nd)) {
+		// restore previous list
+		visible_fn_exprs = old_visible_fn_exprs;
+		
+		if (declares(nd, 'arguments')) {
 			// TODO: wrap all arguments (if caller is native), undefined arguments (if not)
 			throw new Error("cannot handle this yet");
 		} else {

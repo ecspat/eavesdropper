@@ -37,7 +37,8 @@ var wrapGlobal = Runtime.prototype.wrapGlobal = function(pos, global) {
 Runtime.prototype.wrapLiteral = function(pos, lit) {
 	var res = new TaggedValue(lit, this.observer.tagLiteral(pos, lit));
 	
-	if(Object(lit) === lit) {
+	// it can happen that we are asked to wrap a literal that has already been wrapped before, in which case we don't need to do re-wrap
+	if(Object(lit) === lit && !lit.hasOwnProperty('__properties')) {
 		Object.defineProperty(lit, "__properties", { enumerable: false, writable: false, value: {} });
 		
 		for(var p in lit) {
