@@ -311,7 +311,6 @@ function instrument_node(nd) {
 		
 	case 'FunctionExpression':
 		// adjust list of visible function expression names inside the body
-		debugger;
 		var old_visible_fn_exprs = visible_fn_exprs;
 		visible_fn_exprs = update_visible_fn_exprs(visible_fn_exprs, nd);
 		
