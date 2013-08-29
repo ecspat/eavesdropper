@@ -53,21 +53,25 @@ function mkAssignStmt(lhs, rhs) {
 	};
 }
 
+function mkPosRecord(pos, props) {
+	return {
+		type: 'ObjectExpression',
+		properties: props.map(function(p) {
+			return {
+				type: 'Property',
+				key: mkIdentifier(p),
+				value: mkLiteral(pos[p]),
+				kind: 'init'
+			};
+		})
+	};
+}
+
 function mkRuntimeCall(m, nd, props, args) {
 	args = args || [];
 	if (nd && props) {
 		var pos = astutil.getPosition(nd);
-		args = [{
-			type: 'ObjectExpression',
-			properties: props.map(function(p) {
-				return {
-					type: 'Property',
-					key: mkIdentifier(p),
-					value: mkLiteral(pos[p]),
-					kind: 'init'
-				};
-			})
-		}].concat(args);
+		args = [mkPosRecord(pos, props)].concat(args);
 	}
 	
 	return {
@@ -193,16 +197,37 @@ function instrument_node(nd) {
 			
 			switch(right.type) {
 			case 'FunctionExpression':
-			case 'ObjectExpression':
 			case 'ArrayExpression':
 			case 'Literal':
 				instrument_node(right);
 				nd.expression.right = mkRuntimeCall('wrapLiteral', nd, ['start_offset'], [right]);
 				break;
+
+			// almost the same as the previous case, but we pass position information for getters and setters to wrapLiteral				
+			case 'ObjectExpression':
+				var getter_pos = { type: 'ObjectExpression', properties: [] };
+				var setter_pos = { type: 'ObjectExpression', properties: [] };
+				for(var i=0,n=right.properties.length;i<n;++i) {
+					var property = right.properties[i];
+					if(property.kind === 'get') {
+						getter_pos.properties.push({ type: 'Property', key: mkIdentifier(property.key.name), value: mkPosRecord(astutil.getPosition(property.value), ['start_offset']) });
+					} else if(property.kind === 'set') {
+						setter_pos.properties.push({ type: 'Property', key: mkIdentifier(property.key.name), value: mkPosRecord(astutil.getPosition(property.value), ['start_offset']) });
+					}
+				}
+				
+				instrument_node(right);
+				nd.expression.right = mkRuntimeCall('wrapLiteral', nd, ['start_offset'], [right, getter_pos, setter_pos]);
+				break;
 				
 			case 'CallExpression':
 				if(right.callee.type === 'Identifier') {
-					nd.expression.right = mkRuntimeCall('funcall', nd, ['start_offset'], [right.callee, mkIdentifier('__global'), mkArray(right['arguments'])]);
+					// HACK: need to properly treat direct eval calls
+					if(right.callee.name === 'eval') {
+						nd.expression.right = mkRuntimeCall('wrapNativeException', nd, ['start_offset'], [right]);
+					} else {
+						nd.expression.right = mkRuntimeCall('funcall', nd, ['start_offset'], [right.callee, mkIdentifier('__global'), mkArray(right['arguments'])]);
+					}
 				} else {
 					nd.expression.right = mkRuntimeCall('methodcall', nd, ['start_offset'], [right.callee.object, right.callee.property, mkArray(right['arguments'])]);
 				}

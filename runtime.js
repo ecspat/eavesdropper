@@ -34,7 +34,7 @@ var wrapGlobal = Runtime.prototype.wrapGlobal = function(pos, global) {
 	return tagged_global;
 };
 
-Runtime.prototype.wrapLiteral = function(pos, lit) {
+Runtime.prototype.wrapLiteral = function(pos, lit, getter_pos, setter_pos) {
 	var res = new TaggedValue(lit, this.observer.tagLiteral(pos, lit));
 	
 	// it can happen that we are asked to wrap a literal that has already been wrapped before, in which case we don't need to do re-wrap
@@ -45,7 +45,7 @@ Runtime.prototype.wrapLiteral = function(pos, lit) {
 			var desc = Object.getOwnPropertyDescriptor(lit, p);
 			if(desc) {
 				if(desc.get || desc.set) {
-					this.defineAccessors(pos, res, p, false, desc.get, desc.set);
+					this.defineAccessors(pos, res, p, false, desc.get, getter_pos[p], desc.set, setter_pos[p]);
 				} else {
 					this.propwrite(pos, res, new TaggedValue(p, this.observer.tagLiteral(null, p)), false, desc.value);
 				}
@@ -244,17 +244,17 @@ var propwrite = Runtime.prototype.propwrite = function(pos, obj, prop, isDynamic
 	return val;
 };
 
-Runtime.prototype.defineAccessors = function(pos, obj, prop, isDynamic, getter, setter) {
+Runtime.prototype.defineAccessors = function(pos, obj, prop, isDynamic, getter, getter_pos, setter, setter_pos) {
 	var unwrapped_obj = obj.getValue();
 	Object.defineProperty(unwrapped_obj, prop, { get: getter, set: setter, enumerable: true });
 	if(unwrapped_obj.hasOwnProperty('__properties')) {
 		if(getter) {
-			var getter_tag = this.observer.tagGetter(pos, getter);
+			var getter_tag = this.observer.tagGetter(pos, getter, getter_pos);
 			this.observer.defineGetter(obj.getTag(), prop, getter_tag);
 			unwrapped_obj.__properties['get ' + prop] = getter_tag;
 		}
 		if(setter) {
-			var setter_tag = this.observer.tagSetter(pos, setter);
+			var setter_tag = this.observer.tagSetter(pos, setter, setter_pos);
 			this.observer.defineSetter(obj.getTag(), prop, setter_tag);
 			unwrapped_obj.__properties['set ' + prop] = setter_tag;
 		}
