@@ -222,8 +222,12 @@ function instrument_node(nd) {
 				
 			case 'CallExpression':
 				if(right.callee.type === 'Identifier') {
-					// HACK: need to properly treat direct eval calls
+					// HACK: need to properly treat direct eval calls; for now just unwrap their arguments and re-wrap the result
 					if(right.callee.name === 'eval') {
+						var args = right['arguments'];
+						for(i=0,n=args.length;i<n;++i) {
+							args[i] = mkRuntimeCall('unwrap', null, null, [args[i]]);
+						}
 						nd.expression.right = mkRuntimeCall('wrapNativeException', nd, ['start_offset'], [right]);
 					} else {
 						nd.expression.right = mkRuntimeCall('funcall', nd, ['start_offset'], [right.callee, mkIdentifier('__global'), mkArray(right['arguments'])]);
