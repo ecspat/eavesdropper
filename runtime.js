@@ -66,7 +66,11 @@ var wrapForInVar = Runtime.prototype.wrapForInVar = function(pos, prop) {
 };
 
 var wrapNativeException = Runtime.prototype.wrapNativeException = function(pos, exn) {
-	return new TaggedValue(exn, this.observer.tagNativeException(exn));
+	if(exn instanceof TaggedValue) {
+		return exn;
+	} else {
+		return new TaggedValue(exn, this.observer.tagNativeException(exn));
+	}
 };
 
 var wrapNativeArgument = Runtime.prototype.wrapNativeArgument = function(callee, arg, idx) {
