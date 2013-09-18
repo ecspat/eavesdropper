@@ -231,6 +231,7 @@ var propread = Runtime.prototype.propread = function(pos, obj, prop, isDynamic) 
 	var res, stored_tag;
 	if(desc && desc.get) {
 		var getter_tag = util.hasOwnProperty(unwrapped_obj, '__properties') && unwrapped_obj.__properties['get ' + unwrapped_prop];
+		getter_tag = getter_tag || this.observer.tagNativeException(desc.get);
 		return this.funcall(pos, new TaggedValue(desc.get, getter_tag), obj, [], 'method');
 	} else {
 		res = unwrapped_obj[unwrapped_prop];
@@ -245,6 +246,7 @@ var propwrite = Runtime.prototype.propwrite = function(pos, obj, prop, isDynamic
 	var res;
 	if(desc && desc.set) {
 		var setter_tag = util.hasOwnProperty(unwrapped_obj, '__properties') && unwrapped_obj.__properties['set ' + unwrapped_prop];
+		setter_tag = setter_tag || this.observer.tagNativeException(desc.get);
 		this.funcall(pos, new TaggedValue(desc.set, setter_tag), obj, [val], 'method');
 	} else {
 		unwrapped_obj[unwrapped_prop] = unwrapped_val;
